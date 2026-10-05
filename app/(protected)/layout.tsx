@@ -28,6 +28,23 @@ export default async function ProtectedLayout({
             Card Scanner
           </Link>
           <div className="flex min-w-0 items-center gap-4">
+            <nav
+              aria-label="Main navigation"
+              className="flex gap-3 text-sm font-medium"
+            >
+              <Link
+                href="/dashboard"
+                className="rounded-md px-1 py-3 hover:underline focus-visible:outline-2 focus-visible:outline-ring"
+              >
+                Dashboard
+              </Link>
+              <Link
+                href="/scan"
+                className="rounded-md px-1 py-3 hover:underline focus-visible:outline-2 focus-visible:outline-ring"
+              >
+                Scan card
+              </Link>
+            </nav>
             <p className="hidden max-w-64 truncate text-sm text-muted-foreground sm:block">
               {user.email}
             </p>

@@ -1,4 +1,6 @@
 import { CreditCard, CalendarDays, Archive, Inbox } from "lucide-react";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
 import { requireUser } from "@/lib/auth/session";
 import {
   Card,
@@ -132,16 +134,16 @@ export default async function DashboardPage() {
               />
               <h2 className="font-medium">Your collection starts here</h2>
               <p className="mt-2 max-w-sm text-sm text-muted-foreground">
-                No cards yet. Scanning and card management will be available in
-                the next phases.
+                No cards yet. You can now capture or select a card image and
+                check its preview.
               </p>
             </div>
           )}
         </CardContent>
       </Card>
-      <p className="text-sm text-muted-foreground">
-        Foundation is ready. Card scanning will be added in Phase 2.
-      </p>
+      <Button asChild>
+        <Link href="/scan">Scan a card</Link>
+      </Button>
     </div>
   );
 }

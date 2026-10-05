@@ -1,9 +1,9 @@
-﻿# Card Scanner — Phase 1
+# Card Scanner — Phases 1 and 2
 
-Foundation only: Next.js 16 App Router, React, strict TypeScript, Tailwind 4,
-shadcn/ui, Supabase email/password authentication, protected routes, and a minimal
-responsive dashboard. Scanning, extraction, review, and card-management actions
-are reserved for later phases.
+Next.js 16 App Router, strict TypeScript, Tailwind 4, shadcn/ui, Supabase
+authentication, a dashboard, and a protected camera/upload preview workflow.
+AI extraction, review, saving scans, and card-management actions are reserved
+for later phases.
 
 ## Install and configure
 
@@ -92,8 +92,8 @@ Visit `http://localhost:3000`. `/` redirects to `/login` or `/dashboard`.
 Sign in with a provisioned account. Sign out ends the current browser session.
 The proxy refreshes cookies and prevents auth responses from being cached.
 Protected pages also verify the user with the Auth server before reading data.
-`/dashboard`, `/cards/*`, and `/scan/*` are protected; only the dashboard exists
-in Phase 1. Invalid sessions return to login, and sign-in return paths are
+`/dashboard`, `/cards/*`, and `/scan/*` are protected. Dashboard and scan pages
+are implemented. Invalid sessions return to login, and sign-in return paths are
 restricted to application routes. All database reads use the user's session and
 the public key. Frontend filtering supplements, but never replaces, RLS.
 
@@ -146,7 +146,60 @@ Also verify in a browser: sign in, reload the dashboard, sign out, and open
 `/dashboard` again; it must redirect to `/login`. Check mobile and desktop widths,
 including keyboard focus and validation messages.
 
-## Current verification status (2026-10-05)
+## Phase 2 — Scan UI
+
+Sign in, then use **Scan card** in the navigation or open `/scan`. The scanner
+uses a native `capture="environment"` image input for mobile camera capture and
+a separate upload input. JPG/JPEG, PNG, and WEBP are supported up to and including
+10 × 1024 × 1024 bytes. Camera behavior varies by browser/device; desktop browsers
+usually offer a file picker. See the [capture attribute documentation](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Attributes/capture).
+
+Validation checks file size, byte signatures, and a complete browser image decode.
+File extensions and browser MIME cannot make an unsupported file valid. Corrupt,
+empty, oversized, SVG, GIF, PDF, and HEIC files are rejected. Supported content
+with missing or incorrect MIME is decoded through a correctly typed local blob;
+the original file is preserved. Phase 3 must independently revalidate content on
+the server when an extraction endpoint is introduced.
+
+The scanner has idle, validating, image-selected, error, and extraction-unavailable
+states. A valid image is previewed locally with filename, size, and dimensions.
+Replace/retake and remove controls are available. An invalid replacement preserves
+the earlier valid image. Native picker cancellation also preserves the preview.
+Object URLs are revoked on replacement, removal, validation failure, cancellation,
+and unmount, including previews whose decoding is still pending.
+
+**Extract information** requires an accepted image and an explicit click. It
+currently displays an unavailable notice. It makes no API call, generates no
+extracted data, and saves nothing. The `extract` handler in
+`components/scanner/use-card-scanner.ts` is the future Phase 3 integration point.
+
+`npm test` includes six scanner tests covering real format fixtures, MIME spoofing,
+size boundaries, corrupt images, capture/upload selection, preview, replacement,
+removal, canceled selections, loading controls, no extraction network requests,
+and object URL cleanup. React interaction tests use jsdom with Sharp decoding
+fixtures; production uses the browser decoder.
+
+Manual device checks:
+
+1. Sign in and open `/scan` on desktop and a phone.
+2. Select each supported format; confirm the preview and file details.
+3. Use Take photo on a supported phone; confirm the captured image previews.
+4. Replace/retake, cancel the picker, and remove; check the existing preview is
+   preserved or cleared as appropriate.
+5. Try an empty file, a file over 10 MB, and a text/PDF file renamed to `.jpg`.
+6. Click Extract; confirm only the unavailable notice appears and nothing is sent.
+7. Check keyboard focus, validation announcements, and mobile layout.
+
+Phase 2 validation (2026-10-05): all 10 tests pass (four foundation tests and six
+scanner tests), lint and build pass. The protected scan page was opened in Chrome
+using the existing signed-in session. At a 375 px mobile viewport, no horizontal
+overflow was detected and all scanner buttons measured 44 px high. Browser file
+chooser automation was blocked because the ChatGPT extension does not have local
+file access; camera/upload interactions and decoding were verified through the
+automated component tests. A physical phone camera remains a manual device check.
+The browser automation permission does not affect normal user file selection.
+
+## Phase 1 verification snapshot (2026-10-05)
 
 - Lint and production build pass.
 - Four foundation tests pass, including migration/RLS checks in PostgreSQL.
