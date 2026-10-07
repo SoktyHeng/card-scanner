@@ -11,6 +11,7 @@ import {
 import { JSDOM } from "jsdom";
 import sharp from "sharp";
 import { CardScanner } from "../components/scanner/card-scanner";
+import { businessCard, emptyCard } from "./fixtures/extraction";
 import {
   createImagePreview,
   MAX_IMAGE_BYTES,
@@ -201,9 +202,6 @@ test("camera/upload selection previews, replaces and removes without extraction 
     .getAttribute("src");
   assert.notEqual(secondUrl, firstUrl);
   assert.equal(requests, 0);
-  fireEvent.click(view.getByRole("button", { name: "Extract information" }));
-  assert.ok(view.getByText(/no information has been extracted or saved/));
-  assert.equal(requests, 0);
   fireEvent.click(view.getByRole("button", { name: "Remove image" }));
   assert.equal(view.queryByAltText("Selected card image"), null);
   assert.ok(secondUrl && revoked.includes(secondUrl));
@@ -294,4 +292,150 @@ test("unmount cancels validation and releases pending URLs", async () => {
   await act(async () => {
     resume();
   });
+});
+
+test("Extract is explicit, duplicate requests are prevented, and validated results stay in memory", async () => {
+  let calls = 0;
+  let finish!: (response: Response) => void;
+  const pending = new Promise<Response>((resolve) => {
+    finish = resolve;
+  });
+  mock.method(globalThis, "fetch", async (url: string, init: RequestInit) => {
+    calls++;
+    assert.equal(url, "/api/cards/extract");
+    assert.equal(init.method, "POST");
+    assert.ok(init.body instanceof FormData);
+    const image = init.body.get("image");
+    assert.ok(image instanceof File);
+    assert.equal(image.size, png.length);
+    return pending;
+  });
+  const view = render(createElement(CardScanner));
+  fireEvent.change(view.getByLabelText("Upload card image"), {
+    target: { files: [file(png)] },
+  });
+  await view.findByText("card.png");
+  assert.equal(calls, 0);
+  const extract = view.getByRole("button", { name: "Extract information" });
+  fireEvent.click(extract);
+  fireEvent.click(extract);
+  assert.equal(calls, 1);
+  assert.equal(
+    (view.getByRole("button", { name: "Analyzing card…" }) as HTMLButtonElement)
+      .disabled,
+    true,
+  );
+  assert.equal(
+    (view.getByRole("button", { name: "Replace image" }) as HTMLButtonElement)
+      .disabled,
+    true,
+  );
+  await act(async () => {
+    finish(Response.json({ success: true, data: businessCard() }));
+  });
+  assert.ok(view.getByText("JOHN SMITH"));
+  assert.ok(view.getByText("EMP-1001"));
+  assert.ok(view.getByText(/Nothing has been saved/));
+  assert.equal(calls, 1);
+  fireEvent.change(view.getByLabelText("Upload card image"), {
+    target: { files: [file(webp, "next.webp")] },
+  });
+  await view.findByText("next.webp");
+  assert.equal(view.queryByText("JOHN SMITH"), null);
+  assert.equal(calls, 1);
+});
+
+test("provider errors allow manual retry; empty validated results do not fabricate fields", async () => {
+  let calls = 0;
+  mock.method(globalThis, "fetch", async () => {
+    calls++;
+    return calls === 1
+      ? Response.json(
+          {
+            success: false,
+            error: {
+              code: "PROVIDER_UNAVAILABLE",
+              message: "internal provider detail",
+            },
+          },
+          { status: 502 },
+        )
+      : Response.json({ success: true, data: emptyCard() });
+  });
+  const view = render(createElement(CardScanner));
+  fireEvent.change(view.getByLabelText("Upload card image"), {
+    target: { files: [file(png)] },
+  });
+  await view.findByText("card.png");
+  fireEvent.click(view.getByRole("button", { name: "Extract information" }));
+  assert.match(
+    (await view.findByRole("alert")).textContent!,
+    /temporarily unavailable/,
+  );
+  assert.equal(view.queryByText("internal provider detail"), null);
+  assert.equal(calls, 1);
+  assert.ok(view.getByAltText("Selected card image"));
+  fireEvent.click(view.getByRole("button", { name: "Retry extraction" }));
+  await view.findByText(/No readable fields were found/);
+  assert.equal(calls, 2);
+  assert.equal(view.queryByRole("alert"), null);
+  assert.equal(view.queryByText("JOHN SMITH"), null);
+});
+
+test("invalid provider responses and network errors never become successful results", async () => {
+  let calls = 0;
+  mock.method(globalThis, "fetch", async () => {
+    calls++;
+    if (calls === 1)
+      return Response.json({
+        success: true,
+        data: { name: "Fabricated success" },
+      });
+    throw new Error("private network diagnostic");
+  });
+  const view = render(createElement(CardScanner));
+  fireEvent.change(view.getByLabelText("Upload card image"), {
+    target: { files: [file(png)] },
+  });
+  await view.findByText("card.png");
+  fireEvent.click(view.getByRole("button", { name: "Extract information" }));
+  await view.findByRole("alert");
+  assert.equal(view.queryByText("Fabricated success"), null);
+  fireEvent.click(view.getByRole("button", { name: "Retry extraction" }));
+  await waitFor(() =>
+    assert.match(view.getByRole("alert").textContent!, /Check your connection/),
+  );
+  assert.equal(view.queryByText("private network diagnostic"), null);
+});
+
+test("canceling or unmounting extraction aborts the request and ignores late responses", async () => {
+  const signals: AbortSignal[] = [];
+  const finish: Array<(response: Response) => void> = [];
+  mock.method(globalThis, "fetch", async (_url: string, init: RequestInit) => {
+    signals.push(init.signal as AbortSignal);
+    return new Promise<Response>((resolve) => {
+      finish.push(resolve);
+    });
+  });
+  const view = render(createElement(CardScanner));
+  for (let index = 0; index < 2; index++) {
+    fireEvent.change(view.getByLabelText("Upload card image"), {
+      target: { files: [file(png)] },
+    });
+    await view.findByText("card.png");
+    fireEvent.click(view.getByRole("button", { name: "Extract information" }));
+    if (index === 0)
+      fireEvent.click(
+        view.getByRole("button", {
+          name: "Cancel extraction and remove image",
+        }),
+      );
+    else view.unmount();
+    assert.equal(signals[index].aborted, true);
+    await act(async () => {
+      finish[index](Response.json({ success: true, data: businessCard() }));
+    });
+    assert.equal(view.queryByText("JOHN SMITH"), null);
+    assert.equal(urls.size, 0);
+  }
 });

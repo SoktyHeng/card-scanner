@@ -6,15 +6,19 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ImagePicker } from "@/components/scanner/image-picker";
 import { ImagePreview } from "@/components/scanner/image-preview";
 import { useCardScanner } from "@/components/scanner/use-card-scanner";
+import { ExtractionResult } from "@/components/scanner/extraction-result";
 
 export function CardScanner() {
-  const { state, selectImage, removeImage, extract } = useCardScanner();
-  const busy = state.status === "validating";
-  const status = busy
-    ? "Checking image…"
-    : state.image
-      ? "Image selected"
-      : "No image selected";
+  const { state, result, selectImage, removeImage, extract } = useCardScanner();
+  const extracting = state.status === "extracting";
+  const busy = state.status === "validating" || extracting;
+  const status = extracting
+    ? "Analyzing card…"
+    : busy
+      ? "Checking image…"
+      : state.image
+        ? "Image selected"
+        : "No image selected";
 
   return (
     <Card>
@@ -79,18 +83,10 @@ export function CardScanner() {
             </div>
           )}
         </div>
-        {state.status === "error" && (
+        {(state.status === "error" || state.status === "extraction_error") && (
           <p
             role="alert"
             className="rounded-lg border border-destructive/30 p-3 text-sm text-destructive"
-          >
-            {state.message}
-          </p>
-        )}
-        {state.status === "extraction_unavailable" && (
-          <p
-            role="status"
-            className="rounded-lg border bg-muted/40 p-3 text-sm"
           >
             {state.message}
           </p>
@@ -103,7 +99,11 @@ export function CardScanner() {
             disabled={!state.image && !busy}
             onClick={removeImage}
           >
-            {busy && !state.image ? "Cancel selection" : "Remove image"}
+            {extracting
+              ? "Cancel extraction and remove image"
+              : busy && !state.image
+                ? "Cancel selection"
+                : "Remove image"}
           </Button>
           <Button
             type="button"
@@ -111,13 +111,20 @@ export function CardScanner() {
             disabled={!state.image || busy}
             onClick={extract}
           >
-            Extract information
+            {extracting
+              ? "Analyzing card…"
+              : state.status === "extraction_error"
+                ? "Retry extraction"
+                : result
+                  ? "Extract again"
+                  : "Extract information"}
           </Button>
         </div>
         <p className="text-sm text-muted-foreground">
-          Extraction is not available yet. Your image stays in this browser and
-          is not uploaded or saved.
+          Clicking Extract sends this image to the AI provider for analysis. No
+          card or image is saved. AI can make mistakes; check the results.
         </p>
+        {result && <ExtractionResult data={result} />}
       </CardContent>
     </Card>
   );
