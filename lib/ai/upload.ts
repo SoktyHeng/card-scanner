@@ -5,9 +5,8 @@ import { ExtractionError } from "./errors";
 import type { ExtractionImage } from "./types";
 
 // Bound the complete body even when Content-Length is absent or dishonest.
-export const MAX_MULTIPART_BYTES = MAX_IMAGE_BYTES + 64 * 1024;export async function readExtractionImage(
-  request: Request,
-): Promise<ExtractionImage> {
+export const MAX_MULTIPART_BYTES = MAX_IMAGE_BYTES + 64 * 1024;
+export async function readBoundedMultipart(request: Request, maxBytes = MAX_MULTIPART_BYTES): Promise<FormData> {
   if (
     !request.headers
       .get("content-type")
@@ -16,7 +15,7 @@ export const MAX_MULTIPART_BYTES = MAX_IMAGE_BYTES + 64 * 1024;export async func
   )
     throw new ExtractionError("INVALID_UPLOAD");
   const declared = Number(request.headers.get("content-length"));
-  if (declared > MAX_MULTIPART_BYTES)
+  if (declared > maxBytes)
     throw new ExtractionError("IMAGE_TOO_LARGE");
   if (!request.body) throw new ExtractionError("INVALID_UPLOAD");
   const reader = request.body.getReader();
@@ -27,7 +26,7 @@ export const MAX_MULTIPART_BYTES = MAX_IMAGE_BYTES + 64 * 1024;export async func
       const { done, value } = await reader.read();
       if (done) break;
       length += value.byteLength;
-      if (length > MAX_MULTIPART_BYTES) {
+      if (length > maxBytes) {
         await reader.cancel();
         throw new ExtractionError("IMAGE_TOO_LARGE");
       }
@@ -47,6 +46,11 @@ export const MAX_MULTIPART_BYTES = MAX_IMAGE_BYTES + 64 * 1024;export async func
   } catch {
     throw new ExtractionError("INVALID_UPLOAD");
   }
+  return form;
+}
+
+export async function readExtractionImage(request: Request): Promise<ExtractionImage> {
+  const form = await readBoundedMultipart(request);
   const images = form.getAll("image");
   if (
     images.length !== 1 ||
@@ -54,7 +58,10 @@ export const MAX_MULTIPART_BYTES = MAX_IMAGE_BYTES + 64 * 1024;export async func
     !(images[0] instanceof File)
   )
     throw new ExtractionError("INVALID_UPLOAD");
-  const file = images[0];
+  return validateOriginalImage(images[0]);
+}
+
+export async function validateOriginalImage(file: File): Promise<ExtractionImage> {
   if (file.size > MAX_IMAGE_BYTES) throw new ExtractionError("IMAGE_TOO_LARGE");
   try {
     const mimeType = await validateImageFile(file);

@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { afterEach, mock, test } from "node:test";
 import { NvidiaCardExtractor } from "../../lib/ai/nvidia-card-extractor";
 import { extractCard } from "../../lib/ai/card-extractor";
 import { emptyCard } from "../fixtures/extraction";
 
 const image = { bytes: new Uint8Array([1, 2, 3]), mimeType: "image/png" as const };
 const config = { apiKey: "test-secret", model: "meta/muse-glimmer-30b" };
+afterEach(() => mock.restoreAll());
 const completion = (content: string, finish_reason = "stop") => Response.json({
   choices: [{ finish_reason, message: { content, reasoning_content: "not JSON" } }],
 });
@@ -39,6 +40,28 @@ test("NVIDIA model-specific reasoning options are not sent to other models", asy
     return completion(JSON.stringify(emptyCard()));
   });
   await extractCard(image, new AbortController().signal, provider);
+});
+
+test("NVIDIA timing diagnostics identify the timeout stage without exposing content or secrets", async () => {
+  const logs: unknown[][] = [];
+  mock.method(console, "info", (...args: unknown[]) => logs.push(args));
+  mock.method(console, "warn", (...args: unknown[]) => logs.push(args));
+  const controller = new AbortController();
+  const provider = new NvidiaCardExtractor(config, async () => {
+    const response = new Response();
+    response.json = async () => {
+      controller.abort();
+      throw new Error("private-card-content test-secret");
+    };
+    return response;
+  });
+  await assert.rejects(provider.extract(image, controller.signal), { code: "EXTRACTION_TIMEOUT" });
+  const logged = JSON.stringify(logs);
+  assert.match(logged, /response_body/);
+  assert.match(logged, /elapsedMs/);
+  assert.equal(logged.includes("test-secret"), false);
+  assert.equal(logged.includes("private-card-content"), false);
+  assert.equal(logged.includes("AQID"), false);
 });
 
 test("NVIDIA rejects incomplete, invalid and refused output and safely handles upstream failures", async () => {

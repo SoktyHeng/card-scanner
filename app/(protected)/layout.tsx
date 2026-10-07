@@ -27,7 +27,7 @@ export default async function ProtectedLayout({
             </span>
             Card Scanner
           </Link>
-          <div className="flex min-w-0 items-center gap-4">
+          <div className="flex min-w-0 flex-wrap items-center gap-4">
             <nav
               aria-label="Main navigation"
               className="flex gap-3 text-sm font-medium"
@@ -37,6 +37,12 @@ export default async function ProtectedLayout({
                 className="rounded-md px-1 py-3 hover:underline focus-visible:outline-2 focus-visible:outline-ring"
               >
                 Dashboard
+              </Link>
+              <Link
+                href="/cards"
+                className="rounded-md px-1 py-3 hover:underline focus-visible:outline-2 focus-visible:outline-ring"
+              >
+                Cards
               </Link>
               <Link
                 href="/scan"

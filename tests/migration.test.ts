@@ -120,6 +120,15 @@ test("foundation migration enforces database and storage ownership", async () =>
       new Date(after.rows[0].updated_at).getTime() >=
         new Date(before.rows[0].updated_at).getTime(),
     );
+    await db.query("update public.cards set raw_ocr_text = 'Original source', ai_extraction = '{\"name\":\"AI name\"}', name = 'Reviewed name', extra_fields = $1, is_archived = false where id = $2", [JSON.stringify(extra), cardId]);
+    await db.query("update public.cards set name = 'Edited name', is_archived = true where id = $1", [cardId]);
+    assert.equal((await db.query("select id from public.cards where is_archived = false")).rows.length, 0);
+    await db.query("update public.cards set is_archived = false where id = $1", [cardId]);
+    const restored = await db.query<{ name: string; raw_ocr_text: string; ai_extraction: unknown; extra_fields: unknown }>("select name, raw_ocr_text, ai_extraction, extra_fields from public.cards where is_archived = false", []);
+    assert.equal(restored.rows[0].name, "Edited name");
+    assert.equal(restored.rows[0].raw_ocr_text, "Original source");
+    assert.deepEqual(restored.rows[0].ai_extraction, { name: "AI name" });
+    assert.deepEqual(restored.rows[0].extra_fields, extra);
     await db.query(
       "insert into storage.objects(bucket_id, name) values ('card-images', $1)",
       [path],
@@ -138,6 +147,8 @@ test("foundation migration enforces database and storage ownership", async () =>
       userB,
     ]);
     assert.deepEqual((await db.query("select * from public.cards")).rows, []);
+    assert.deepEqual((await db.query("update public.cards set is_archived = true returning id")).rows, []);
+    assert.deepEqual((await db.query("update public.cards set is_archived = false returning id")).rows, []);
     assert.deepEqual(
       (
         await db.query(

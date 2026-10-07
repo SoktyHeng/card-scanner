@@ -162,6 +162,25 @@ test("authenticated endpoint returns validated structure; invalid uploads never 
   assert.equal(called, 2);
 });
 
+test("extraction endpoint prepares large uploads before calling the provider", async () => {
+  const original = await sharp({ create: { width: 4200, height: 2800, channels: 3, background: "white" } }).png().toBuffer();
+  let called = false;
+  const handler = createExtractionHandler({
+    authenticate: async () => true,
+    extract: async image => {
+      called = true;
+      assert.equal(image.mimeType, "image/jpeg");
+      const metadata = await sharp(image.bytes).metadata();
+      assert.equal(metadata.width, 2048);
+      assert.ok((metadata.height ?? 0) < 2048);
+      return businessCard();
+    },
+  });
+  assert.equal((await handler(request(file(original)))).status, 200);
+  assert.ok(called);
+  assert.equal((await sharp(original).metadata()).width, 4200);
+});
+
 test("provider abstraction validates every output and rejects invented structure", async () => {
   const image: ExtractionImage = { bytes: png, mimeType: "image/png" };
   const valid: CardExtractor = { extract: async () => businessCard() };

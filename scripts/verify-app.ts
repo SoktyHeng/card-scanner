@@ -8,7 +8,8 @@ async function main() {
     "/",
     "/dashboard",
     "/cards",
-    "/cards/example/edit",
+    "/cards/00000000-0000-4000-8000-000000000003",
+    "/cards/00000000-0000-4000-8000-000000000003/edit",
     "/scan",
   ]) {
     const response = await fetch(base + path, { redirect: "manual" });
@@ -63,6 +64,22 @@ async function main() {
   console.log(
     "PASS: Extraction API rejects anonymous and forged sessions with safe JSON",
   );
+  for (const headers of [new Headers(), new Headers({ Cookie: `${key}=${cookie}` })]) {
+    const response = await fetch(base + "/api/cards", { method: "POST", headers, redirect: "manual" });
+    assert.equal(response.status, 401);
+    assert.equal((await response.json()).error.code, "UNAUTHORIZED");
+    assert.ok(response.headers.get("cache-control")?.includes("no-store"));
+  }
+  console.log("PASS: Save API rejects anonymous and forged sessions before processing uploads");
+  for (const method of ["PATCH", "DELETE"]) {
+    for (const headers of [new Headers(), new Headers({ Cookie: `${key}=${cookie}` })]) {
+      const response = await fetch(base + "/api/cards/00000000-0000-4000-8000-000000000003", { method, headers });
+      assert.equal(response.status, 401);
+      assert.equal((await response.json()).error.code, "UNAUTHORIZED");
+      assert.ok(response.headers.get("cache-control")?.includes("no-store"));
+    }
+  }
+  console.log("PASS: Edit/archive/restore/delete API rejects anonymous and forged sessions");
 }
 
 main().catch((error: unknown) => {

@@ -26,6 +26,8 @@ export class NvidiaCardExtractor implements CardExtractor {
   ) {}
 
   async extract(image: ExtractionImage, signal: AbortSignal): Promise<unknown> {
+    const startedAt = Date.now();
+    let stage: "request" | "response_body" | "validation" = "request";
     try {
       const response = await this.request(
         "https://integrate.api.nvidia.com/v1/chat/completions",
@@ -73,6 +75,11 @@ export class NvidiaCardExtractor implements CardExtractor {
           }),
         },
       );
+      stage = "response_body";
+      console.info("NVIDIA extraction response received", {
+        status: response.status,
+        elapsedMs: Date.now() - startedAt,
+      });
       if (response.status === 429)
         throw new ExtractionError("PROVIDER_RATE_LIMITED");
       if (!response.ok) throw new ExtractionError("PROVIDER_UNAVAILABLE");
@@ -84,6 +91,7 @@ export class NvidiaCardExtractor implements CardExtractor {
         throw new ExtractionError("EXTRACTION_FAILED");
       }
       const result = completionSchema.safeParse(envelope);
+      stage = "validation";
       if (!result.success) throw new ExtractionError("EXTRACTION_FAILED");
       if (result.data.choices[0].message.refusal)
         throw new ExtractionError("EXTRACTION_FAILED");
@@ -93,7 +101,10 @@ export class NvidiaCardExtractor implements CardExtractor {
         throw new ExtractionError("EXTRACTION_FAILED");
       }
     } catch (error: unknown) {
-      if (signal.aborted) throw new ExtractionError("EXTRACTION_TIMEOUT");
+      if (signal.aborted) {
+        console.warn("NVIDIA extraction aborted", { stage, elapsedMs: Date.now() - startedAt });
+        throw new ExtractionError("EXTRACTION_TIMEOUT");
+      }
       if (error instanceof ExtractionError) throw error;
       throw new ExtractionError("PROVIDER_UNAVAILABLE");
     }

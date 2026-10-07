@@ -3,6 +3,7 @@ import { extractedCardSchema } from "./card-schema";
 import { ExtractionError } from "./errors";
 import { readExtractionImage } from "./upload";
 import { EXTRACTION_TIMEOUT_MS } from "./timeouts";
+import { prepareExtractionImage } from "./prepare-image";
 import type { ExtractedCard, ExtractionImage } from "./types";
 
 export interface ExtractionDependencies {
@@ -15,6 +16,7 @@ export interface ExtractionDependencies {
 
 export function createExtractionHandler(deps: ExtractionDependencies) {
   return async (request: Request): Promise<Response> => {
+    const startedAt = Date.now();
     try {
       const origin = request.headers.get("origin");
       if (origin) {
@@ -33,17 +35,22 @@ export function createExtractionHandler(deps: ExtractionDependencies) {
         throw new ExtractionError("AUTH_UNAVAILABLE");
       }
       if (!authenticated) throw new ExtractionError("UNAUTHORIZED");
-      const image = await readExtractionImage(request);
+      const originalImage = await readExtractionImage(request);
+      const image = await prepareExtractionImage(originalImage);
       const signal = AbortSignal.any([
         request.signal,
         AbortSignal.timeout(EXTRACTION_TIMEOUT_MS),
       ]);
-      console.info("Card extraction started");
+      console.info("Card extraction started", {
+        originalBytes: originalImage.bytes.byteLength,
+        aiBytes: image.bytes.byteLength,
+        timeoutMs: EXTRACTION_TIMEOUT_MS,
+      });
       const result = extractedCardSchema.safeParse(
         await deps.extract(image, signal),
       );
       if (!result.success) throw new ExtractionError("EXTRACTION_FAILED");
-      console.info("Card extraction completed");
+      console.info("Card extraction completed", { elapsedMs: Date.now() - startedAt });
       return Response.json(
         { success: true, data: result.data },
         { headers: { "Cache-Control": "private, no-store" } },
@@ -53,7 +60,7 @@ export function createExtractionHandler(deps: ExtractionDependencies) {
         error instanceof ExtractionError
           ? error
           : new ExtractionError("EXTRACTION_FAILED");
-      console.warn("Card extraction failed", { code: failure.code });
+      console.warn("Card extraction failed", { code: failure.code, elapsedMs: Date.now() - startedAt });
       return Response.json(
         {
           success: false,

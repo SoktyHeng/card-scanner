@@ -6,16 +6,24 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ImagePicker } from "@/components/scanner/image-picker";
 import { ImagePreview } from "@/components/scanner/image-preview";
 import { useCardScanner } from "@/components/scanner/use-card-scanner";
-import { ExtractionResult } from "@/components/scanner/extraction-result";
+import { CardReviewForm } from "@/components/cards/card-review-form";
+import { redirect } from "next/navigation";
 
 export function CardScanner() {
-  const { state, result, selectImage, removeImage, extract } = useCardScanner();
+  const { state, result, reviewedScan, confirmReview, invalidateReview, selectImage, removeImage, extract, save } = useCardScanner();
+  if (state.status === "completed") redirect(`/cards/${state.cardId}`);
   const extracting = state.status === "extracting";
-  const busy = state.status === "validating" || extracting;
-  const status = extracting
+  const saving = state.status === "saving";
+  const saveLocked = saving;
+  const busy = state.status === "validating" || extracting || saveLocked;
+  const status = saving ? "Saving card…" : extracting
     ? "Analyzing card…"
     : busy
       ? "Checking image…"
+      : state.status === "reviewed"
+        ? "Review confirmed"
+        : state.status === "review"
+          ? "Ready for review"
       : state.image
         ? "Image selected"
         : "No image selected";
@@ -83,7 +91,7 @@ export function CardScanner() {
             </div>
           )}
         </div>
-        {(state.status === "error" || state.status === "extraction_error") && (
+        {(state.status === "error" || state.status === "extraction_error" || state.status === "save_error") && (
           <p
             role="alert"
             className="rounded-lg border border-destructive/30 p-3 text-sm text-destructive"
@@ -96,7 +104,7 @@ export function CardScanner() {
             type="button"
             variant="outline"
             className="w-full sm:w-auto"
-            disabled={!state.image && !busy}
+            disabled={saveLocked || (!state.image && !busy)}
             onClick={removeImage}
           >
             {extracting
@@ -121,10 +129,16 @@ export function CardScanner() {
           </Button>
         </div>
         <p className="text-sm text-muted-foreground">
-          Clicking Extract sends this image to the AI provider for analysis. No
-          card or image is saved. AI can make mistakes; check the results.
+          Clicking Extract sends this image to the AI provider for analysis.
+          Extraction does not save the card. Review the results, then choose Save card.
+          Large photos are resized for analysis; the original image stays available for review.
         </p>
-        {result && <ExtractionResult data={result} />}
+        {result && <CardReviewForm extraction={result} confirmed={reviewedScan !== null} disabled={busy} onConfirm={confirmReview} onChange={invalidateReview} />}
+        {reviewedScan && <div className="space-y-3 border-t pt-5">
+          <p className="text-sm">Your review is confirmed. Save the original image and corrected card information to your private collection.</p>
+          <Button type="button" className="w-full sm:w-auto" disabled={busy} onClick={save}>{saving ? "Saving card…" : state.status === "save_error" ? "Retry saving card" : "Save card"}</Button>
+        </div>}
+        {state.status === "save_error" && state.message.includes("session has expired") && <a className="inline-block py-3 underline" href="/login?next=%2Fscan">Sign in again</a>}
       </CardContent>
     </Card>
   );

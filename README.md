@@ -1,8 +1,9 @@
-# Card Scanner — Phases 1–3
+# Card Scanner — Phases 1–5
 
 Next.js 16 App Router, strict TypeScript, Tailwind 4, shadcn/ui, Supabase
-authentication, a dashboard, camera/upload preview, and authenticated AI extraction.
-Editing/review, saving scans, and card-management actions are reserved for later phases.
+authentication, a dashboard, camera/upload preview, authenticated AI extraction,
+an editable review screen, and private reviewed-card saving. Card management
+remains for later phases.
 
 ## Install and configure
 
@@ -282,7 +283,20 @@ the body, rejects foreign browser origins, bounds the streamed body (10 MB plus
 with Sharp. It accepts original JPG/JPEG, PNG, or WEBP content even if browser
 MIME is wrong. Empty, corrupt, animated/multipage, unsupported, over-10-MB, or
 over-40-megapixel images are rejected. The pixel limit bounds decoder resource use.
-The original supported bytes are sent without changing visible content.
+For AI analysis, photos above 2,048 pixels on either edge or 1 MB are prepared
+as a JPEG working copy (quality 92 with full chroma resolution), keeping the
+aspect ratio without upscaling. EXIF orientation is applied and metadata is
+removed from these working copies. Smaller images without an orientation change
+retain their original bytes. The original browser File remains untouched for
+review and the Phase 5 handoff. Downsampling can reduce recognition of tiny text;
+use a sharp photo with the card filling the frame.
+
+Safe operational logs include original/AI byte counts, elapsed time, NVIDIA
+response status and the stage reached when a request is aborted. No image bytes,
+card text, API keys, provider messages or authentication tokens are logged.
+The 120-second deadline is unchanged. NVIDIA endpoint load or difficult images
+can still cause timeouts; an earlier successful synthetic test does not establish
+reliability for every real card.
 
 Success: `{ "success": true, "data": { ... } }`. Failure:
 `{ "success": false, "error": { "code": "...", "message": "..." } }`.
@@ -290,7 +304,8 @@ Responses are private/no-store. Status codes include 400 malformed upload,
 401 missing/invalid session, 403 foreign origin, 413 size, 422 invalid image,
 429 provider rate limit, 502 provider/invalid output, 503 configuration/auth
 outage, and 504 timeout. Errors and logs never include provider bodies, card text,
-images, keys, or tokens. Only operation names and safe error codes are logged.
+images, keys, or tokens. Logs contain operation names, safe error codes and
+numeric timing/size/status metadata, plus the allowlisted NVIDIA request stage.
 
 The contract requires every standard field and rawText (nullable), an
 overallConfidence from 0 to 1, nullable scores in fieldConfidences, and extraFields
@@ -305,9 +320,8 @@ mandatory before saving in later phases.
 
 The scanner disables duplicate extraction and image selection while analyzing,
 offers cancellation/removal, and allows **Retry extraction** after failure.
-Successful results show read-only values, confidences, extra fields, and source
-text. Empty results ask for a clearer photo. The validated result object remains
-in React state for the Phase 4 integration; it clears on replacement/removal,
+Successful results now enter the Phase 4 review form described below. The validated
+AI result remains separate in React state and clears on replacement/removal,
 new extraction, or navigation. No local storage, database, or bucket writes occur.
 
 ### Test Phase 3
@@ -344,6 +358,131 @@ extraction API denial of anonymous and forged sessions. Successful provider/API
 tests use mocked providers and auth dependencies. Live successful AI extraction is blocked locally by missing
 `AI_API_KEY` and `AI_MODEL`; live signed-in API verification also needs a
 provisioned user/session. No account passwords were available to the test scripts.
+
+## Phase 4 — Review Screen
+
+After extraction, `/scan` shows `CardReviewForm` with all standard fields first,
+including blank inputs for missing values, followed by editable additional fields.
+Users can edit labels and values, add/remove fields, and convert a custom value
+to a standard field. Conversion refuses an occupied target and keeps both values;
+users can deliberately copy or clear the existing value before converting.
+
+Confidence thresholds are high at 0.90+, medium at 0.70–0.89, and low below 0.70.
+Low scores and unknown fields have visible review guidance. Manual additions and
+corrections have null confidence, rather than an invented score. Existing AI scores
+remain in the original extraction. Low confidence or an unknown label does not
+prevent confirmation. Empty extraction results permit manual entry.
+
+`lib/cards/review.ts` contains immutable editing/conversion helpers and a separate
+strict Zod schema for human corrections. Blank standard values become null; email
+format, value lengths, extra-field arrays/keys, and confidence bounds are validated.
+Blank custom values require correction or removal. Khmer labels and values are
+preserved; keys are generated internally with a safe fallback for non-Latin labels.
+
+The explicit **Confirm reviewed information** action validates the draft and
+prepares `ReviewedScan` in the scanner hook: original `File`, original raw text,
+a copy of the validated AI extraction, and separate reviewed data. Editing
+invalidates the confirmation. Image replacement/removal, re-extraction, or leaving
+clears the review. The UI makes clear that confirmation has not saved anything.
+Phase 5 can consume this handoff; it must revalidate on the server before saving.
+
+The form uses labeled inputs, grouped fields, associated validation messages,
+live status announcements, keyboard focus on new/converted fields and errors,
+44-pixel controls, and a single-column mobile layout with two columns on larger
+screens. Source text and image remain available for comparison.
+
+Verification (2026-10-07): `npm test`, `npm run lint`, and `npm run build` pass.
+Tests cover review validation, Khmer preservation, custom editing/addition/removal,
+conversion conflicts, confidence boundaries, unknown and empty results, keyboard
+focus, source preservation, confirmation invalidation and scan lifecycle cleanup.
+UI behavior uses jsdom; physical phone and screen-reader checks remain manual.
+Phase 4 adds no storage/database writes, migrations, or save endpoints.
+
+## Phase 5 — Save Card
+
+Confirm the review, then choose **Save card**. `/api/cards` authenticates with
+Supabase `getUser()` before reading the upload. It bounds the multipart body,
+requires one original image and one JSON payload, validates both corrected and
+original AI data with Zod, and rechecks the image signature, size, format and full
+decode. It accepts no client owner, image path or arbitrary database columns.
+
+The server derives `user_id` from the verified session and creates a UUID v5 from
+that owner and a per-confirmation submission UUID. Retrying the same confirmed
+draft therefore checks the same record, including after a lost response. New
+corrections require confirmation again. In-flight guards prevent duplicate clicks;
+the storage path and database primary key also protect concurrent submissions.
+
+The original bytes are uploaded with `upsert: false` to private `card-images` at
+`{user_id}/{card_id}/original.{jpg|png|webp}` before the row is inserted. Corrected
+standard values and the `extra_fields` JSONB array are the final card data.
+`raw_ocr_text`, `ai_extraction` and `ai_confidence` retain the original source
+separately. The foundation migration already contains all required columns and
+owner RLS policies, so Phase 5 needs no additional migration or service-role key.
+All operations use the public key plus the authenticated user's session JWT.
+
+Failed inserts trigger upload cleanup after checking whether the insert actually
+committed. Cleanup failure is reported explicitly. If the commit check fails,
+the image is preserved and the result is reported as uncertain; retrying the same
+submission checks the existing row or finishes its earlier upload. No image is
+overwritten. Draft values and preview remain after failure. Saving disables review,
+replacement, removal and repeat submission until the operation returns.
+
+Successful saves redirect to the minimal protected `/cards/[id]` page. It scopes
+the query to the owner, shows corrected fields and custom values, and signs the
+private image for five minutes. Missing/other-user cards use the same not-found
+screen. Image-load errors offer a reload to renew the temporary URL. No list,
+editing, archive, delete, or keyword search is introduced in this phase.
+
+Verification (2026-10-07): 63 automated tests, lint and production build pass.
+Tests cover unauthorized access, validation, original-byte upload, upload-before-
+insert order, source preservation, duplicate suppression and idempotent retries,
+storage/database/cleanup failures, and owner-scoped signed image access. Real
+embedded PostgreSQL tests verify the existing database/storage ownership policies.
+Production HTTP checks verify protected navigation and save/extract denial for
+anonymous and forged sessions. Hosted Auth health and anonymous database denial
+pass. Live signed-in saving, private image upload/signing and two-user API isolation
+remain blocked by missing `TEST_USER_A/B_EMAIL` and `TEST_USER_A/B_PASSWORD`.
+No hosted schema or user records were changed by this verification.
+
+## Phase 6 — Card Management
+
+Protected `/cards` lists active cards by default, with an archived view and
+24-card pagination. Summaries link to full details and show available private
+images through five-minute signed URLs. Details include all standard/custom
+fields, original source text, and created/updated timestamps. Missing and
+other-user cards share a not-found response. Navigation and dashboard entries
+link to saved cards; keyword search remains for Phase 7.
+
+`/cards/[id]/edit` reuses `CardReviewForm`, initialized from the saved corrected
+values rather than the AI extraction. Standard confidence scores unavailable in
+the saved record remain null. Custom fields can still be edited, added, removed,
+or converted with conflict protection. The server validates corrections with Zod
+and updates only standard columns and `extra_fields`. Original image path, raw
+text, AI extraction/confidence, ownership and scan metadata are preserved.
+Updates use `updated_at` to reject stale forms. Failed requests keep the draft;
+an expired session offers sign-in in another tab.
+
+The owner-scoped `/api/cards/[id]` PATCH route handles editing, archive and
+restore. DELETE requires explicit confirmation from an accessible native modal.
+Deletion archives first, removes the verified private image path, and then
+deletes the record. A storage failure keeps the archived record; a database
+failure after image removal reports partial completion and allows retry. Empty
+storage-removal responses are checked before discarding the image path. A
+concurrent row change prevents deleting that changed record. These operations
+use verified sessions, the existing RLS policies, and no privileged client.
+No migration is needed for Phase 6.
+
+Verification (2026-10-07): 76 automated tests, `npm run lint` and
+`npm run build` pass. Coverage includes corrected-data editing, preservation of
+source data, stale edits, archive/restore, confirmed deletion, duplicate-click
+prevention, deletion/storage/database failures, scoped list reads and mutation
+validation. Embedded PostgreSQL tests verify active/archive transitions and
+database/storage isolation. Production HTTP checks verify protected pages and
+denial of anonymous/forged edit/archive/restore/delete requests.
+Hosted Auth health and anonymous database denial pass. Live signed-in CRUD,
+private storage cleanup/signing and two-user API isolation remain blocked by
+missing `TEST_USER_A/B_EMAIL` and `TEST_USER_A/B_PASSWORD`. Physical-device and
+screen-reader checks remain manual. No hosted schema or user records were changed.
 
 ## Phase 1 verification snapshot (2026-10-05)
 

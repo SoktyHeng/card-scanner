@@ -109,7 +109,7 @@ export default async function DashboardPage() {
                 >
                   <div>
                     <p className="font-medium">
-                      {card.name || card.company || "Untitled card"}
+                      <Link href={`/cards/${card.id}`} className="rounded underline-offset-4 hover:underline focus-visible:outline-2">{card.name || card.company || "Untitled card"}</Link>
                     </p>
                     <p className="text-sm text-muted-foreground">
                       {card.company || card.card_type || "Card"}

@@ -1,3 +1,4 @@
+import "./fixtures/dom";
 import assert from "node:assert/strict";
 import { after, afterEach, before, mock, test } from "node:test";
 import { createElement } from "react";
@@ -6,11 +7,14 @@ import {
   cleanup,
   fireEvent,
   render,
+  renderHook,
   waitFor,
 } from "@testing-library/react";
 import { JSDOM } from "jsdom";
 import sharp from "sharp";
 import { CardScanner } from "../components/scanner/card-scanner";
+import { useCardScanner } from "../components/scanner/use-card-scanner";
+import { createReviewDraft, editStandardField, validateReviewDraft } from "../lib/cards/review";
 import { businessCard, emptyCard } from "./fixtures/extraction";
 import {
   createImagePreview,
@@ -333,16 +337,132 @@ test("Extract is explicit, duplicate requests are prevented, and validated resul
   await act(async () => {
     finish(Response.json({ success: true, data: businessCard() }));
   });
-  assert.ok(view.getByText("JOHN SMITH"));
-  assert.ok(view.getByText("EMP-1001"));
+  assert.ok(view.getByDisplayValue("JOHN SMITH"));
+  assert.ok(view.getByDisplayValue("EMP-1001"));
   assert.ok(view.getByText(/Nothing has been saved/));
   assert.equal(calls, 1);
   fireEvent.change(view.getByLabelText("Upload card image"), {
     target: { files: [file(webp, "next.webp")] },
   });
   await view.findByText("next.webp");
-  assert.equal(view.queryByText("JOHN SMITH"), null);
+  assert.equal(view.queryByDisplayValue("JOHN SMITH"), null);
   assert.equal(calls, 1);
+});
+
+test("scan review confirmation is invalidated by edits and cleared by re-extraction and removal", async () => {
+  let requests = 0;
+  mock.method(globalThis, "fetch", async () => {
+    requests++;
+    return Response.json({ success: true, data: businessCard() });
+  });
+  const view = render(createElement(CardScanner));
+  fireEvent.change(view.getByLabelText("Upload card image"), { target: { files: [file(png)] } });
+  await view.findByText("card.png");
+  fireEvent.click(view.getByRole("button", { name: "Extract information" }));
+  await view.findByRole("heading", { name: "Review card information" });
+  fireEvent.click(view.getByRole("button", { name: "Confirm reviewed information" }));
+  assert.ok(view.getByText(/Review confirmed\. Nothing has been saved/));
+  fireEvent.change(view.getByLabelText("Name"), { target: { value: "Corrected name" } });
+  assert.equal(view.queryByText(/Review confirmed\. Nothing has been saved/), null);
+  assert.equal(requests, 1, "Review and confirmation must not make saving requests");
+  fireEvent.click(view.getByRole("button", { name: "Confirm reviewed information" }));
+  assert.ok(view.getByText(/Review confirmed\. Nothing has been saved/));
+  fireEvent.click(view.getByRole("button", { name: "Extract again" }));
+  await view.findByDisplayValue("JOHN SMITH");
+  assert.equal(view.queryByDisplayValue("Corrected name"), null);
+  assert.equal(view.queryByText(/Review confirmed\. Nothing has been saved/), null);
+  fireEvent.click(view.getByRole("button", { name: "Remove image" }));
+  assert.equal(view.queryByRole("heading", { name: "Review card information" }), null);
+  assert.equal(requests, 2);
+});
+
+test("Phase 5 handoff retains original file, source text and extraction separately from corrections", async () => {
+  mock.method(globalThis, "fetch", async () => Response.json({ success: true, data: businessCard() }));
+  const original = file(png);
+  const hook = renderHook(useCardScanner);
+  await act(async () => { await hook.result.current.selectImage(original); });
+  await act(async () => { await hook.result.current.extract(); });
+  const source = hook.result.current.result!;
+  const corrected = validateReviewDraft(editStandardField(createReviewDraft(source), "name", "Corrected"));
+  assert.ok(corrected.success);
+  act(() => { hook.result.current.confirmReview(corrected.data); });
+  const handoff = hook.result.current.reviewedScan!;
+  assert.equal(handoff.originalImage, original);
+  assert.equal(handoff.rawText, source.rawText);
+  assert.equal(handoff.aiExtraction.name, "JOHN SMITH");
+  assert.equal(handoff.reviewedData.name, "Corrected");
+  assert.equal(hook.result.current.result!.name, "JOHN SMITH");
+  act(() => { hook.result.current.invalidateReview(); });
+  assert.equal(hook.result.current.reviewedScan, null);
+  assert.equal(hook.result.current.state.status, "review");
+});
+
+test("save requires confirmation, blocks duplicate clicks, keeps the draft on failure and retries the same submission", async () => {
+  let saves = 0;
+  let release!: (response: Response) => void;
+  const pending = new Promise<Response>(resolve => { release = resolve; });
+  const submissionIds: string[] = [];
+  mock.method(globalThis, "fetch", async (url: string, init: RequestInit) => {
+    if (url === "/api/cards/extract") return Response.json({ success: true, data: businessCard() });
+    assert.equal(url, "/api/cards");
+    saves++;
+    const body = init.body as FormData;
+    const input = JSON.parse(String(body.get("data")));
+    submissionIds.push(input.submissionId);
+    assert.equal(input.reviewConfirmed, true);
+    assert.equal(input.aiExtraction.name, "JOHN SMITH");
+    assert.equal(input.reviewedData.name, "Corrected name");
+    assert.equal((body.get("image") as File).size, png.length);
+    return saves === 1 ? pending : Response.json({ success: false, error: { code: "UPLOAD_FAILED", message: "private-provider-error" } }, { status: 503 });
+  });
+  const view = render(createElement(CardScanner));
+  fireEvent.change(view.getByLabelText("Upload card image"), { target: { files: [file(png)] } });
+  await view.findByText("card.png");
+  fireEvent.click(view.getByRole("button", { name: "Extract information" }));
+  await view.findByLabelText("Name");
+  assert.equal(view.queryByRole("button", { name: "Save card" }), null);
+  fireEvent.change(view.getByLabelText("Name"), { target: { value: "Corrected name" } });
+  fireEvent.click(view.getByRole("button", { name: "Confirm reviewed information" }));
+  const save = view.getByRole("button", { name: "Save card" });
+  fireEvent.click(save);
+  fireEvent.click(save);
+  assert.equal(saves, 1);
+  assert.equal((view.getByRole("button", { name: "Saving card…" }) as HTMLButtonElement).disabled, true);
+  assert.equal((view.getByLabelText("Name") as HTMLInputElement).disabled, false);
+  assert.ok(view.getByLabelText("Name").closest("fieldset[disabled]"));
+  assert.equal((view.getByRole("button", { name: "Remove image" }) as HTMLButtonElement).disabled, true);
+  await act(async () => { release(Response.json({ success: false, error: { code: "INSERT_FAILED", message: "secret-error" } }, { status: 503 })); });
+  assert.match(view.getByRole("alert").textContent!, /uploaded image was removed/);
+  assert.equal(view.queryByText("secret-error"), null);
+  assert.ok(view.getByDisplayValue("Corrected name"));
+  assert.ok(view.getByAltText("Selected card image"));
+  fireEvent.click(view.getByRole("button", { name: "Retry saving card" }));
+  await waitFor(() => assert.match(view.getByRole("alert").textContent!, /Unable to upload/));
+  assert.equal(saves, 2);
+  assert.equal(submissionIds[0], submissionIds[1]);
+  fireEvent.change(view.getByLabelText("Name"), { target: { value: "Another correction" } });
+  assert.equal(view.queryByRole("button", { name: "Retry saving card" }), null);
+});
+
+test("successful save returns a card destination and prevents another submission", async () => {
+  const id = "00000000-0000-4000-8000-000000000003";
+  let saves = 0;
+  mock.method(globalThis, "fetch", async (url: string) => {
+    if (url === "/api/cards/extract") return Response.json({ success: true, data: businessCard() });
+    saves++;
+    return Response.json({ success: true, id }, { status: 201 });
+  });
+  const hook = renderHook(useCardScanner);
+  await act(async () => { await hook.result.current.selectImage(file(png)); });
+  await act(async () => { await hook.result.current.extract(); });
+  await act(async () => { assert.equal(await hook.result.current.save(), null); });
+  const review = validateReviewDraft(createReviewDraft(hook.result.current.result!));
+  assert.ok(review.success);
+  act(() => { hook.result.current.confirmReview(review.data); });
+  await act(async () => { assert.equal(await hook.result.current.save(), id); });
+  assert.equal(hook.result.current.state.status, "completed");
+  assert.equal(await hook.result.current.save(), null);
+  assert.equal(saves, 1);
 });
 
 test("provider errors allow manual retry; empty validated results do not fabricate fields", async () => {
