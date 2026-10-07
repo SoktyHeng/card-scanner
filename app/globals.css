@@ -127,3 +127,24 @@
     @apply font-sans;
   }
 }
+
+@layer components {
+  .skeleton {
+    background-color: color-mix(in oklch, var(--primary) 10%, var(--muted));
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .skeleton::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(110deg, transparent 20%, color-mix(in oklch, var(--card) 65%, transparent) 50%, transparent 80%);
+      transform: translateX(-100%);
+      animation: skeleton-shimmer 1.8s ease-in-out infinite;
+    }
+  }
+}
+
+@keyframes skeleton-shimmer {
+  to { transform: translateX(100%); }
+}

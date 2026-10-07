@@ -1,3 +1,5 @@
+import { CardListSkeleton } from "@/components/cards/card-skeletons";
+
 export default function LoadingCards() {
-  return <p role="status" aria-live="polite" className="py-8">Loading your cards…</p>;
+  return <CardListSkeleton />;
 }
