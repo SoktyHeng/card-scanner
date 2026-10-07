@@ -46,10 +46,18 @@ async function main() {
     "Anonymous reads must be denied; apply the migration if the table is missing.",
   );
   console.log("PASS: Anonymous database access denied");
+  const anonymousSearch = await anonymous.rpc("search_cards", { p_query: "verification" }).select("id").limit(1);
+  if (anonymousSearch.error?.code === "PGRST202") {
+    console.log("BLOCKED: The card_keyword_search migration is not exposed on the hosted project yet.");
+    process.exitCode = 2;
+  } else {
+    assert.ok(anonymousSearch.error && ["42501", "PGRST301"].includes(anonymousSearch.error.code), "Anonymous search must be denied");
+    console.log("PASS: Anonymous keyword-search execution denied");
+  }
 
   if (missingCredentials) {
     console.log(
-      "BLOCKED: Set TEST_USER_A/B_EMAIL and TEST_USER_A/B_PASSWORD for sign-in, refresh, CRUD, private storage, and user isolation checks.",
+      "BLOCKED: Set TEST_USER_A/B_EMAIL and TEST_USER_A/B_PASSWORD for sign-in, refresh, CRUD, keyword search, private storage, and user isolation checks.",
     );
     process.exitCode = 2;
   } else {
@@ -95,6 +103,21 @@ async function main() {
         });
       assert.equal(insert.error, null, "Own card insert failed");
       cardCreated = true;
+      const search = await a.rpc("search_cards", { p_query: "FOUNDATION verification" }).select("id").eq("id", id);
+      if (search.error?.code === "PGRST202") {
+        console.log("BLOCKED: Apply the card_keyword_search migration before live keyword-search verification.");
+        process.exitCode = 2;
+      } else {
+        assert.equal(search.error, null, "Own keyword search failed");
+        assert.deepEqual(search.data, [{ id }]);
+        const forbiddenSearch = await b.rpc("search_cards", { p_query: "Foundation verification" }).select("id").eq("id", id);
+        assert.equal(forbiddenSearch.error, null);
+        assert.deepEqual(forbiddenSearch.data, []);
+        const punctuation = await a.rpc("search_cards", { p_query: "%_\\" }).select("id").eq("id", id);
+        assert.equal(punctuation.error, null);
+        assert.deepEqual(punctuation.data, []);
+        console.log("PASS: Case-insensitive keyword search, literal wildcards and cross-user denial");
+      }
       const read = await a.from("cards").select("*").eq("id", id).single();
       assert.equal(read.error, null);
       assert.deepEqual(read.data?.extra_fields, [

@@ -35,6 +35,11 @@ export function CardListSkeleton() {
       <div className="flex h-12 items-center gap-4">
         <Skeleton className="h-6 w-24" /><Skeleton className="h-6 w-28" />
       </div>
+      <div className="space-y-2">
+        <Skeleton className="h-4 w-24" />
+        <div className="flex flex-col gap-3 sm:flex-row"><Skeleton className="h-11 min-w-0 flex-1" /><div className="flex gap-3"><Skeleton className="h-11 w-24" /><Skeleton className="h-11 w-28" /></div></div>
+        <Skeleton className="h-4 w-3/4" />
+      </div>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {Array.from({ length: 6 }, (_, index) => <CardListItemSkeleton key={index} />)}
       </div>

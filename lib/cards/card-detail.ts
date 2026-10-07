@@ -4,6 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 import { reviewedCardSchema } from "./review";
 import { ownsImagePath } from "./management-schema";
+import { cardSearchQuerySchema } from "./search";
 
 export const SIGNED_IMAGE_SECONDS = 300;
 export async function getSavedCard(supabase: SupabaseClient<Database>, userId: string, id: string) {
@@ -27,8 +28,12 @@ export async function getSavedCard(supabase: SupabaseClient<Database>, userId: s
 }
 
 export const CARDS_PER_PAGE = 24;
-export async function getCardList(supabase: SupabaseClient<Database>, userId: string, archived: boolean, page: number) {
-  const result = await supabase.from("cards")
+export async function getCardList(supabase: SupabaseClient<Database>, userId: string, archived: boolean, page: number, query = "") {
+  const keyword = cardSearchQuerySchema.parse(query);
+  if (!Number.isSafeInteger(page) || page < 1 || page > 100000) throw new Error("Invalid card list page.");
+  // Empty search uses the existing list query and does not require the RPC.
+  const source = keyword ? supabase.rpc("search_cards", { p_query: keyword }) : supabase.from("cards");
+  const result = await source
     .select("id,name,company,job_title,phone,email,created_at,original_image_path")
     .eq("user_id", userId).eq("is_archived", archived)
     .order("created_at", { ascending: false }).order("id", { ascending: false })

@@ -484,6 +484,56 @@ private storage cleanup/signing and two-user API isolation remain blocked by
 missing `TEST_USER_A/B_EMAIL` and `TEST_USER_A/B_PASSWORD`. Physical-device and
 screen-reader checks remain manual. No hosted schema or user records were changed.
 
+## Phase 7 — Keyword Search
+
+`/cards` has a labeled, mobile-friendly search form. Submitting searches the
+saved name, company, phone, email, job title and card number using a
+case-insensitive literal substring. The query lives in `q`; active/archived
+links retain it, pagination retains both query and status, and changing or
+clearing the query resets to page one. Search has an explicit submit action,
+pending announcements, input validation, and useful no-results guidance.
+The existing list skeleton includes placeholders for the search controls.
+
+The server trims and validates queries with Zod (maximum 200 characters, no
+internal control characters or repeated query parameters). Empty queries use
+the existing owner-scoped list. Nonempty queries call `public.search_cards`
+with a bound argument, then apply owner/archive filters, deterministic ordering,
+and a 24-card page plus one look-ahead result. No user input is interpolated
+into SQL or PostgREST filter expressions. PostgreSQL `ILIKE` searches escape
+`%`, `_` and backslashes, so punctuation and wildcard characters remain literal.
+The function is stable, uses `SECURITY INVOKER` and a fixed search path, derives
+ownership from `auth.uid()`, and keeps the table's existing RLS in effect.
+Only authenticated users may execute it. No AI or embeddings are involved.
+
+Apply the version-controlled migration
+`supabase/migrations/20261007093634_card_keyword_search.sql` before using search
+on an existing Supabase project. Follow the migration workflow above and review
+the dry run; never reapply an already recorded foundation migration. Database
+types include the new RPC signature. Implementation follows the official
+[database functions guide](https://supabase.com/docs/guides/database/functions)
+and [PostgreSQL pattern matching reference](https://www.postgresql.org/docs/current/functions-matching.html).
+
+Verification (2026-10-07): all 83 automated tests, lint and production build pass.
+Tests cover matching all six columns,
+empty queries, case folding, Khmer, quotes/commas/parentheses, literal wildcards,
+injection-like strings, archive filters, pagination, query validation and URL
+state. Real embedded PostgreSQL tests execute the actual migrations under
+authenticated roles and prove two-user isolation and anonymous denial. UI tests
+cover submit/clear, validation, pending feedback and duplicate prevention.
+The live verification script checks RPC availability and authenticated search
+when disposable credentials are supplied.
+
+The migration was applied to the linked hosted project after a CLI dry run
+confirmed that it was the only pending migration. The CLI used its existing
+cached connection; no environment credentials were exposed. Hosted Auth and
+anonymous table/search denial pass. Live signed-in search and two-user API
+checks remain blocked by missing `TEST_USER_A/B_EMAIL` and
+`TEST_USER_A/B_PASSWORD`. No hosted user records were changed. Phase 8 duplicate
+detection remains unimplemented.
+The hosted security advisor reports no search-function/RLS issues. Its existing
+Auth warning about disabled leaked-password protection remains unchanged and
+outside Phase 7.
+
 ## Phase 1 verification snapshot (2026-10-05)
 
 - Lint and production build pass.
