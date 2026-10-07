@@ -30,6 +30,7 @@ function fixture() {
   const calls: string[] = [];
   const store: CardSaveStore = {
     async findCard(id) { calls.push("find"); return records.has(id) ? { id } : null; },
+    async findDuplicates() { calls.push("duplicates"); return []; },
     async upload(path, image) { calls.push("upload"); if (images.has(path)) return "exists"; images.set(path, image.bytes); return "uploaded"; },
     async insert(card) { calls.push("insert"); records.set(card.id!, card); },
     async remove(path) { calls.push("remove"); return images.delete(path); },
@@ -90,7 +91,7 @@ test("successful save uploads original bytes before inserting owner-scoped final
   const result = await response.json();
   const id = submissionCardId(userId, submissionId);
   assert.equal(result.id, id);
-  assert.deepEqual(calls, ["find", "upload", "insert"]);
+  assert.deepEqual(calls, ["find", "duplicates", "upload", "insert"]);
   const record = records.get(id)!;
   assert.equal(record.user_id, userId);
   assert.equal(record.name, "Corrected name");
@@ -175,4 +176,57 @@ test("retry can finish an earlier upload whose response was lost without replaci
   assert.equal(state.records.size, 1);
   assert.deepEqual(state.images.get(path), png);
   assert.equal(state.calls.includes("remove"), false);
+});
+
+test("duplicate warning pauses before writes; explicit save anyway rechecks and preserves original data", async () => {
+  const state = fixture();
+  let checks = 0;
+  const matches = [{ id: "00000000-0000-4000-8000-000000000099", name: "Existing", company: null, archived: false, reasons: ["email" as const] }];
+  state.store.findDuplicates = async (data, excludedId) => {
+    checks++;
+    assert.equal(data.phone, payload().reviewedData.phone);
+    assert.equal(excludedId, submissionCardId(userId, submissionId));
+    return matches;
+  };
+  const handler = createSaveCardHandler(async () => ({ userId, store: state.store }));
+  const warning = await handler(request());
+  assert.equal(warning.status, 409);
+  assert.match(warning.headers.get("cache-control")!, /no-store/);
+  const result = await warning.json();
+  assert.equal(result.error.code, "POSSIBLE_DUPLICATES");
+  assert.deepEqual(result.duplicateWarning.matches, matches);
+  assert.equal(state.images.size, 0);
+  assert.equal(state.records.size, 0);
+  const saved = await handler(request({ ...payload(), duplicateAcknowledgement: { confirmed: true, fingerprint: result.duplicateWarning.fingerprint } }));
+  assert.equal(saved.status, 201);
+  assert.equal(checks, 2);
+  assert.equal(state.images.size, 1);
+  assert.equal(state.records.size, 1);
+  assert.equal([...state.records.values()][0].phone, payload().reviewedData.phone);
+  assert.deepEqual([...state.records.values()][0].ai_extraction, businessCard());
+  assert.equal((await handler(request())).status, 201);
+  assert.equal(checks, 2);
+});
+
+test("changed review or matches requires a fresh warning; failed checks cannot upload or insert", async () => {
+  const state = fixture();
+  const matches = [{ id: "00000000-0000-4000-8000-000000000099", name: "Existing", company: null, archived: false, reasons: ["email" as const] }];
+  state.store.findDuplicates = async () => matches;
+  const handler = createSaveCardHandler(async () => ({ userId, store: state.store }));
+  const initial = await (await handler(request())).json();
+  const acknowledged = { ...payload(), duplicateAcknowledgement: { confirmed: true, fingerprint: initial.duplicateWarning.fingerprint } };
+  const edited = { ...acknowledged, reviewedData: { ...acknowledged.reviewedData, name: "Edited after warning" } };
+  const updated = await handler(request(edited));
+  assert.equal(updated.status, 409);
+  assert.notEqual((await updated.json()).duplicateWarning.fingerprint, initial.duplicateWarning.fingerprint);
+  matches[0].archived = true;
+  assert.equal((await handler(request(acknowledged))).status, 409);
+  assert.equal((await handler(request({ ...acknowledged, submissionId: "00000000-0000-4000-8000-000000000004" }))).status, 409);
+  assert.equal((await handler(request({ ...acknowledged, duplicateAcknowledgement: { ...acknowledged.duplicateAcknowledgement, confirmed: false } }))).status, 422);
+  state.store.findDuplicates = async () => { throw new Error("private database detail"); };
+  const failure = await handler(request());
+  assert.equal(failure.status, 503);
+  assert.equal((await failure.json()).error.code, "DUPLICATE_CHECK_FAILED");
+  assert.equal(state.images.size, 0);
+  assert.equal(state.records.size, 0);
 });

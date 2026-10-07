@@ -2,7 +2,7 @@ import "server-only";
 import { MAX_IMAGE_BYTES } from "@/lib/utils/image";
 import { readBoundedMultipart, validateOriginalImage } from "@/lib/ai/upload";
 import { saveCardSchema } from "./save-schema";
-import { SaveError, saveReviewedCard, type SaveContext } from "./save-service";
+import { DuplicateWarningError, SaveError, saveReviewedCard, type SaveContext } from "./save-service";
 
 export const MAX_SAVE_DATA_BYTES = 3 * 1024 * 1024;
 export const MAX_SAVE_BODY_BYTES = MAX_IMAGE_BYTES + MAX_SAVE_DATA_BYTES + 64 * 1024;
@@ -35,6 +35,9 @@ export function createSaveCardHandler(authenticate: () => Promise<SaveContext | 
       const id = await saveReviewedCard(context, parsed.data, image);
       return Response.json({ success: true, id }, { status: 201, headers: { "Cache-Control": "private, no-store" } });
     } catch (error: unknown) {
+      if (error instanceof DuplicateWarningError) return Response.json({ success: false,
+        error: { code: error.code, message: error.message }, duplicateWarning: error.warning },
+      { status: 409, headers: { "Cache-Control": "private, no-store" } });
       const failure = error instanceof SaveError ? error : new SaveError("SAVE_STATUS_UNKNOWN");
       console.warn("Card save failed", { code: failure.code });
       const status = failure.code === "UNAUTHORIZED" ? 401 : failure.code === "FORBIDDEN" ? 403

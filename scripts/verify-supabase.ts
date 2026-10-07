@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { loadEnvConfig } from "@next/env";
 import { createClient } from "@supabase/supabase-js";
 import { getPublicEnv } from "../lib/env";
+import { matchDuplicate, type DuplicateInput } from "../lib/cards/duplicates";
 import type { Database } from "../types/database";
 
 async function main() {
@@ -57,7 +58,7 @@ async function main() {
 
   if (missingCredentials) {
     console.log(
-      "BLOCKED: Set TEST_USER_A/B_EMAIL and TEST_USER_A/B_PASSWORD for sign-in, refresh, CRUD, keyword search, private storage, and user isolation checks.",
+      "BLOCKED: Set TEST_USER_A/B_EMAIL and TEST_USER_A/B_PASSWORD for sign-in, refresh, CRUD, keyword search, duplicate matching, private storage, and user isolation checks.",
     );
     process.exitCode = 2;
   } else {
@@ -92,6 +93,10 @@ async function main() {
           id,
           user_id: userA.id,
           name: "Foundation verification",
+          company: "Verification company",
+          email: `${id}@example.com`,
+          phone: "+855 (12) 345-678",
+          card_number: id,
           extra_fields: [
             {
               label: null,
@@ -120,6 +125,21 @@ async function main() {
       }
       const read = await a.from("cards").select("*").eq("id", id).single();
       assert.equal(read.error, null);
+      assert.ok(read.data);
+      const empty: DuplicateInput = { email: null, phone: null, secondaryPhone: null, cardNumber: null, name: null, company: null };
+      for (const [values, reason] of [
+        [{ email: `${id.toUpperCase()}@EXAMPLE.COM` }, "email"],
+        [{ phone: "+85512345678" }, "phone"],
+        [{ cardNumber: id }, "card_number"],
+        [{ name: "FOUNDATION verification", company: "Verification  company" }, "name_company"],
+      ] as const) {
+        assert.deepEqual(matchDuplicate({ ...empty, ...values }, read.data)?.reasons, [reason]);
+      }
+      assert.equal(matchDuplicate(empty, read.data), null);
+      const foreignCandidates = await b.from("cards").select("*").eq("user_id", userA.id).eq("id", id);
+      assert.equal(foreignCandidates.error, null);
+      assert.deepEqual(foreignCandidates.data, []);
+      console.log("PASS: Live duplicate comparison fields, all matching rules and cross-user candidate denial");
       assert.deepEqual(read.data?.extra_fields, [
         {
           label: null,

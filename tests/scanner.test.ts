@@ -465,6 +465,87 @@ test("successful save returns a card destination and prevents another submission
   assert.equal(saves, 1);
 });
 
+test("duplicate warning preserves image and draft, cancel sends nothing, and edited values recheck", async () => {
+  const warning = { fingerprint: "a".repeat(64), matches: [{ id: "00000000-0000-4000-8000-000000000099", name: "Existing", company: null, archived: true, reasons: ["email"] }] };
+  const sent: Array<{ submissionId: string; duplicateAcknowledgement?: unknown; reviewedData: { name: string } }> = [];
+  mock.method(globalThis, "fetch", async (url: string, init: RequestInit) => {
+    if (url === "/api/cards/extract") return Response.json({ success: true, data: businessCard() });
+    const body = init.body as FormData;
+    sent.push(JSON.parse(String(body.get("data"))));
+    assert.deepEqual(new Uint8Array(await (body.get("image") as File).arrayBuffer()), png);
+    return Response.json({ success: false, error: { code: "POSSIBLE_DUPLICATES", message: "Possible duplicate found" }, duplicateWarning: warning }, { status: 409 });
+  });
+  const view = render(createElement(CardScanner));
+  fireEvent.change(view.getByLabelText("Upload card image"), { target: { files: [file(png)] } });
+  await view.findByText("card.png");
+  fireEvent.click(view.getByRole("button", { name: "Extract information" }));
+  await view.findByLabelText("Name");
+  fireEvent.click(view.getByRole("button", { name: "Confirm reviewed information" }));
+  fireEvent.click(view.getByRole("button", { name: "Save card" }));
+  const heading = await view.findByRole("heading", { name: "Possible duplicate found" });
+  assert.ok(document.activeElement === heading);
+  const existing = view.getByRole("link", { name: /View existing Existing/ });
+  assert.equal(existing.getAttribute("target"), "_blank");
+  assert.equal(existing.getAttribute("href"), `/cards/${warning.matches[0].id}`);
+  assert.ok(view.getByText("Matching email"));
+  assert.ok(view.getByText("Archived card"));
+  fireEvent.click(view.getByRole("button", { name: "Cancel" }));
+  await waitFor(() => assert.ok(document.activeElement === view.getByRole("button", { name: "Save card" })));
+  assert.equal(sent.length, 1);
+  assert.ok(view.getByAltText("Selected card image"));
+  fireEvent.click(view.getByRole("button", { name: "Save card" }));
+  await view.findByRole("button", { name: "Save anyway" });
+  assert.equal(sent[0].submissionId, sent[1].submissionId);
+  fireEvent.change(view.getByLabelText("Name"), { target: { value: "Edited after warning" } });
+  assert.equal(view.queryByRole("button", { name: "Save anyway" }), null);
+  fireEvent.click(view.getByRole("button", { name: "Confirm reviewed information" }));
+  fireEvent.click(view.getByRole("button", { name: "Save card" }));
+  await view.findByRole("button", { name: "Save anyway" });
+  assert.equal(sent[2].reviewedData.name, "Edited after warning");
+  assert.notEqual(sent[2].submissionId, sent[1].submissionId);
+  assert.equal(sent[2].duplicateAcknowledgement, undefined);
+});
+
+test("save anyway sends explicit acknowledgement and guards repeated submissions", async () => {
+  const warning = { fingerprint: "b".repeat(64), matches: [{ id: "00000000-0000-4000-8000-000000000099", name: "Existing", company: null, archived: false, reasons: ["phone"] }] };
+  let saves = 0;
+  let finish!: (response: Response) => void;
+  mock.method(globalThis, "fetch", async (url: string, init: RequestInit) => {
+    if (url === "/api/cards/extract") return Response.json({ success: true, data: businessCard() });
+    saves++;
+    const data = JSON.parse(String((init.body as FormData).get("data")));
+    if (saves === 1) return Response.json({ success: false, error: { code: "POSSIBLE_DUPLICATES", message: "Possible duplicate found" }, duplicateWarning: warning }, { status: 409 });
+    assert.deepEqual(data.duplicateAcknowledgement, { confirmed: true, fingerprint: warning.fingerprint });
+    return new Promise<Response>(resolve => { finish = resolve; });
+  });
+  const hook = renderHook(useCardScanner);
+  const status = () => hook.result.current.state.status;
+  await act(async () => { await hook.result.current.selectImage(file(png)); });
+  await act(async () => { await hook.result.current.extract(); });
+  const review = validateReviewDraft(createReviewDraft(hook.result.current.result!));
+  assert.ok(review.success);
+  act(() => hook.result.current.confirmReview(review.data));
+  await act(async () => { await hook.result.current.save(); });
+  assert.equal(status(), "duplicates");
+  assert.equal(await hook.result.current.save(), null);
+  let pending!: Promise<string | null>;
+  act(() => { pending = hook.result.current.save(true); });
+  assert.equal(status(), "saving");
+  assert.equal(await hook.result.current.save(true), null);
+  act(() => hook.result.current.cancelDuplicateSave());
+  assert.equal(status(), "saving");
+  await act(async () => { finish(Response.json({ success: false, error: { code: "UPLOAD_FAILED", message: "Unable to upload" } }, { status: 503 })); assert.equal(await pending, null); });
+  assert.equal(status(), "save_error");
+  assert.deepEqual(hook.result.current.duplicateWarning, warning);
+  assert.ok(hook.result.current.reviewedScan);
+  assert.ok(hook.result.current.state.image);
+  act(() => { pending = hook.result.current.save(true); });
+  const id = "00000000-0000-4000-8000-000000000003";
+  await act(async () => { finish(Response.json({ success: true, id }, { status: 201 })); assert.equal(await pending, id); });
+  assert.equal(status(), "completed");
+  assert.equal(saves, 3);
+});
+
 test("provider errors allow manual retry; empty validated results do not fabricate fields", async () => {
   let calls = 0;
   mock.method(globalThis, "fetch", async () => {

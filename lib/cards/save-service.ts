@@ -3,13 +3,19 @@ import { createHash } from "node:crypto";
 import type { ExtractionImage } from "@/lib/ai/types";
 import type { Database } from "@/types/database";
 import { saveCardSchema, saveMessages, type SaveCardPayload, type SaveErrorCode } from "./save-schema";
+import { duplicateFingerprint } from "./duplicate-check";
+import type { DuplicateInput, DuplicateMatch, DuplicateWarning } from "./duplicates";
 
 export class SaveError extends Error {
   constructor(readonly code: SaveErrorCode) { super(saveMessages[code]); }
 }
+export class DuplicateWarningError extends SaveError {
+  constructor(readonly warning: DuplicateWarning) { super("POSSIBLE_DUPLICATES"); }
+}
 export type CardInsert = Database["public"]["Tables"]["cards"]["Insert"];
 export interface CardSaveStore {
   findCard: (id: string) => Promise<{ id: string } | null>;
+  findDuplicates: (data: DuplicateInput, excludedId: string) => Promise<DuplicateMatch[]>;
   upload: (path: string, image: ExtractionImage) => Promise<"uploaded" | "exists">;
   insert: (record: CardInsert) => Promise<void>;
   remove: (path: string) => Promise<boolean>;
@@ -54,6 +60,14 @@ export async function saveReviewedCard(context: SaveContext, input: SaveCardPayl
   try {
     const existing = await context.store.findCard(id);
     if (existing) return existing.id;
+    let matches: DuplicateMatch[];
+    try { matches = await context.store.findDuplicates(payload.reviewedData, id); }
+    catch { throw new SaveError("DUPLICATE_CHECK_FAILED"); }
+    if (matches.length) {
+      const fingerprint = duplicateFingerprint(context.userId, payload.submissionId, payload.reviewedData, matches);
+      if (payload.duplicateAcknowledgement?.fingerprint !== fingerprint)
+        throw new DuplicateWarningError({ matches, fingerprint });
+    }
     const extension = image.mimeType === "image/jpeg" ? "jpg" : image.mimeType === "image/png" ? "png" : "webp";
     const path = `${key}/original.${extension}`;
     const uploaded = await context.store.upload(path, image);

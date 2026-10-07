@@ -8,9 +8,12 @@ import { ImagePreview } from "@/components/scanner/image-preview";
 import { useCardScanner } from "@/components/scanner/use-card-scanner";
 import { CardReviewForm } from "@/components/cards/card-review-form";
 import { redirect } from "next/navigation";
+import { useRef } from "react";
+import { DuplicateWarning } from "@/components/cards/duplicate-warning";
 
 export function CardScanner() {
-  const { state, result, reviewedScan, confirmReview, invalidateReview, selectImage, removeImage, extract, save } = useCardScanner();
+  const { state, result, reviewedScan, duplicateWarning, cancelDuplicateSave, confirmReview, invalidateReview, selectImage, removeImage, extract, save } = useCardScanner();
+  const saveButton = useRef<HTMLButtonElement>(null);
   if (state.status === "completed") redirect(`/cards/${state.cardId}`);
   const extracting = state.status === "extracting";
   const saving = state.status === "saving";
@@ -18,6 +21,7 @@ export function CardScanner() {
   const busy = state.status === "validating" || extracting || saveLocked;
   const status = saving ? "Saving card…" : extracting
     ? "Analyzing card…"
+    : state.status === "duplicates" ? "Possible duplicate found"
     : busy
       ? "Checking image…"
       : state.status === "reviewed"
@@ -134,10 +138,11 @@ export function CardScanner() {
           Large photos are resized for analysis; the original image stays available for review.
         </p>
         {result && <CardReviewForm extraction={result} confirmed={reviewedScan !== null} disabled={busy} onConfirm={confirmReview} onChange={invalidateReview} />}
-        {reviewedScan && <div className="space-y-3 border-t pt-5">
+        {reviewedScan && !duplicateWarning && <div className="space-y-3 border-t pt-5">
           <p className="text-sm">Your review is confirmed. Save the original image and corrected card information to your private collection.</p>
-          <Button type="button" className="w-full sm:w-auto" disabled={busy} onClick={save}>{saving ? "Saving card…" : state.status === "save_error" ? "Retry saving card" : "Save card"}</Button>
+          <Button ref={saveButton} type="button" className="w-full sm:w-auto" disabled={busy} onClick={() => { void save(); }}>{saving ? "Saving card…" : state.status === "save_error" ? "Retry saving card" : "Save card"}</Button>
         </div>}
+        {duplicateWarning && <DuplicateWarning warning={duplicateWarning} disabled={busy} onSaveAnyway={() => { void save(true); }} onCancel={() => { cancelDuplicateSave(); queueMicrotask(() => saveButton.current?.focus()); }} />}
         {state.status === "save_error" && state.message.includes("session has expired") && <a className="inline-block py-3 underline" href="/login?next=%2Fscan">Sign in again</a>}
       </CardContent>
     </Card>

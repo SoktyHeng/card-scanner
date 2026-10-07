@@ -1,12 +1,14 @@
 import { z } from "zod";
 import { extractedCardSchema } from "@/lib/ai/card-schema";
 import { reviewedCardSchema } from "./review";
+import { duplicateAcknowledgementSchema, duplicateWarningSchema } from "./duplicates";
 
 export const saveCardSchema = z.strictObject({
   submissionId: z.uuid(),
   reviewConfirmed: z.literal(true),
   aiExtraction: extractedCardSchema,
   reviewedData: reviewedCardSchema,
+  duplicateAcknowledgement: duplicateAcknowledgementSchema.optional(),
 });
 export type SaveCardPayload = z.infer<typeof saveCardSchema>;
 
@@ -31,6 +33,8 @@ export const saveMessages = {
   CLEANUP_FAILED: "Unable to save the card, and its uploaded image could not be removed. Your draft is still here. Contact the administrator before retrying.",
   SAVE_IN_PROGRESS: "This submission is already being saved. Wait a moment, then try again.",
   SAVE_STATUS_UNKNOWN: "Unable to confirm whether the card was saved. Your draft is still here. Retry saving to check the same submission.",
+  DUPLICATE_CHECK_FAILED: "Unable to check for possible duplicates. Nothing new was uploaded or inserted. Your draft is still here; try again.",
+  POSSIBLE_DUPLICATES: "Possible duplicate found",
 } as const;
 export type SaveErrorCode = keyof typeof saveMessages;
 export const saveResponseSchema = z.discriminatedUnion("success", [
@@ -38,5 +42,8 @@ export const saveResponseSchema = z.discriminatedUnion("success", [
   z.strictObject({ success: z.literal(false), error: z.strictObject({
     code: z.enum(Object.keys(saveMessages) as [SaveErrorCode, ...SaveErrorCode[]]),
     message: z.string(),
-  }) }),
+  }), duplicateWarning: duplicateWarningSchema.optional() }).superRefine((response, ctx) => {
+    if ((response.error.code === "POSSIBLE_DUPLICATES") !== !!response.duplicateWarning)
+      ctx.addIssue({ code: "custom", message: "Duplicate warnings must include matching cards." });
+  }),
 ]);

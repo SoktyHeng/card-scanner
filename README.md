@@ -528,11 +528,53 @@ confirmed that it was the only pending migration. The CLI used its existing
 cached connection; no environment credentials were exposed. Hosted Auth and
 anonymous table/search denial pass. Live signed-in search and two-user API
 checks remain blocked by missing `TEST_USER_A/B_EMAIL` and
-`TEST_USER_A/B_PASSWORD`. No hosted user records were changed. Phase 8 duplicate
-detection remains unimplemented.
+`TEST_USER_A/B_PASSWORD`. No hosted user records were changed.
 The hosted security advisor reports no search-function/RLS issues. Its existing
 Auth warning about disabled leaked-password protection remains unchanged and
 outside Phase 7.
+
+## Phase 8 — Duplicate Detection
+
+Saving a reviewed scan first checks the authenticated owner's existing cards,
+including archived cards, before uploading the image or inserting a record.
+The session-scoped Supabase client and existing RLS remain in effect. The server
+reads only comparison fields in 200-row keyset pages, so matches beyond the
+Data API's default row cap are checked too. No schema migration is required.
+The work grows with the owner's collection size; this simple MVP approach
+avoids new infrastructure or storing separate normalized columns.
+
+Matching is deterministic. Emails are trimmed and lowercased without removing
+aliases or dots. Phones lose only whitespace, parentheses, dots and hyphens
+when the result is a single numeric phone with an optional leading `+`.
+Country prefixes, leading zeroes, extensions and multiple numbers are not
+inferred or merged. Both primary and secondary phones are checked, while their
+original display values remain unchanged. Card numbers are trimmed and compared
+case-sensitively, preserving punctuation and zeroes. Name + company requires
+both values and compares case and whitespace consistently. Empty values do not
+match; Unicode normalization preserves accents and Khmer text.
+
+The focused, responsive warning says “Possible duplicate found”, lists each
+matching card and all its reasons, and offers View existing, Save anyway and
+Cancel. View existing opens a new tab to preserve the current review and image.
+Cancel performs no save and returns focus to Save card. Save anyway rechecks
+on the server and explicitly acknowledges the current warning. A fingerprint
+binds that acknowledgement to the authenticated owner, submission, complete
+corrected data and current matches; changed values or matches produce a fresh
+warning. It is a stale-confirmation check, not an authentication credential.
+Editing invalidates the warning and requires review confirmation again.
+Pending requests prevent repeated submissions; failures retain the image,
+draft and warning for retry. Duplicates are never automatically rejected.
+
+Verification (2026-10-07): 92 automated tests, lint and production build pass.
+Tests cover normalization, every matching rule, empty fields, secondary phones,
+archives, paged owner-scoped reads, pre-upload warnings, acknowledgement and
+rechecking, cancellation, failed checks, retry, and repeated-submit prevention.
+Existing embedded PostgreSQL tests verify actual database/storage RLS isolation.
+Production HTTP checks verify protected routes and anonymous/forged-session
+save denial. Hosted Auth and anonymous database/search denial pass. Live signed-in duplicate
+checks and two-user save flows remain blocked by missing `TEST_USER_A/B_EMAIL`
+and `TEST_USER_A/B_PASSWORD`; no hosted records or schema were changed.
+Phase 9 is outside this change.
 
 ## Phase 1 verification snapshot (2026-10-05)
 

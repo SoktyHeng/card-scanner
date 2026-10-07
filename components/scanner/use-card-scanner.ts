@@ -9,6 +9,7 @@ import type { ExtractedCard } from "@/lib/ai/types";
 import { EXTRACTION_CLIENT_TIMEOUT_MS } from "@/lib/ai/timeouts";
 import { prepareReviewedScan, type ReviewedCard, type ReviewedScan } from "@/lib/cards/review";
 import { createSubmissionId, saveMessages, saveResponseSchema } from "@/lib/cards/save-schema";
+import type { DuplicateWarning } from "@/lib/cards/duplicates";
 import {
   createImagePreview,
   ImageValidationError,
@@ -21,7 +22,7 @@ type ScanState =
   | { status: "validating"; image: ImageSelection | null; message: null }
   | { status: "image_selected"; image: ImageSelection; message: null }
   | { status: "extracting"; image: ImageSelection; message: null }
-  | { status: "review" | "reviewed"; image: ImageSelection; message: null }
+  | { status: "review" | "reviewed" | "duplicates"; image: ImageSelection; message: null }
   | { status: "saving"; image: ImageSelection; message: null }
   | { status: "completed"; image: ImageSelection; message: null; cardId: string }
   | { status: "save_error"; image: ImageSelection; message: string }
@@ -40,6 +41,7 @@ export function useCardScanner() {
   const pendingExtraction = useRef<AbortController | null>(null);
   const [result, setResult] = useState<ExtractedCard | null>(null);
   const [reviewedScan, setReviewedScan] = useState<ReviewedScan | null>(null);
+  const [duplicateWarning, setDuplicateWarning] = useState<DuplicateWarning | null>(null);
   const submissionId = useRef<string | null>(null);
   const pendingSave = useRef(false);
   const savedId = useRef<string | null>(null);
@@ -84,6 +86,7 @@ export function useCardScanner() {
       activeImage.current = image;
       setResult(null);
       setReviewedScan(null);
+      setDuplicateWarning(null);
       submissionId.current = null;
       setState({ status: "image_selected", image, message: null });
     } catch (error: unknown) {
@@ -113,6 +116,7 @@ export function useCardScanner() {
     pendingExtraction.current = null;
     setResult(null);
     setReviewedScan(null);
+    setDuplicateWarning(null);
     submissionId.current = null;
     releaseImagePreview(activeImage.current);
     activeImage.current = null;
@@ -135,6 +139,7 @@ export function useCardScanner() {
     ]);
     setResult(null);
     setReviewedScan(null);
+    setDuplicateWarning(null);
     submissionId.current = null;
     setState({ status: "extracting", image, message: null });
     try {
@@ -177,6 +182,7 @@ export function useCardScanner() {
   function confirmReview(data: ReviewedCard) {
     if (!activeImage.current || !result || pendingExtraction.current || pendingSelection.current || pendingSave.current || savedId.current) return;
     setReviewedScan(prepareReviewedScan(activeImage.current.file, result, data));
+    setDuplicateWarning(null);
     submissionId.current = createSubmissionId();
     setState({ status: "reviewed", image: activeImage.current, message: null });
   }
@@ -184,13 +190,21 @@ export function useCardScanner() {
   function invalidateReview() {
     if (pendingSave.current || savedId.current) return;
     setReviewedScan(null);
+    setDuplicateWarning(null);
     submissionId.current = null;
     if (activeImage.current && result)
       setState({ status: "review", image: activeImage.current, message: null });
   }
 
-  async function save(): Promise<string | null> {
+  function cancelDuplicateSave() {
+    if (pendingSave.current || !activeImage.current || !reviewedScan) return;
+    setDuplicateWarning(null);
+    setState({ status: "reviewed", image: activeImage.current, message: null });
+  }
+
+  async function save(saveAnyway = false): Promise<string | null> {
     if (!reviewedScan || !activeImage.current || !submissionId.current || pendingSave.current || savedId.current || pendingSelection.current || pendingExtraction.current) return null;
+    if ((duplicateWarning && !saveAnyway) || (saveAnyway && !duplicateWarning)) return null;
     const image = activeImage.current;
     pendingSave.current = true;
     setState({ status: "saving", image, message: null });
@@ -200,10 +214,18 @@ export function useCardScanner() {
       form.append("data", JSON.stringify({
         submissionId: submissionId.current, reviewConfirmed: true,
         aiExtraction: reviewedScan.aiExtraction, reviewedData: reviewedScan.reviewedData,
+        ...(saveAnyway && duplicateWarning ? { duplicateAcknowledgement: { confirmed: true, fingerprint: duplicateWarning.fingerprint } } : {}),
       }));
       const response = await fetch("/api/cards", { method: "POST", body: form, signal: AbortSignal.timeout(90_000) });
       const parsed = saveResponseSchema.safeParse(await response.json());
       if (!parsed.success) throw new Error(saveMessages.SAVE_STATUS_UNKNOWN);
+      if (!parsed.data.success && parsed.data.error.code === "POSSIBLE_DUPLICATES" && parsed.data.duplicateWarning) {
+        if (mounted.current) {
+          setDuplicateWarning(parsed.data.duplicateWarning);
+          setState({ status: "duplicates", image, message: null });
+        }
+        return null;
+      }
       if (!parsed.data.success) throw new Error(saveMessages[parsed.data.error.code]);
       if (!response.ok) throw new Error(saveMessages.SAVE_STATUS_UNKNOWN);
       savedId.current = parsed.data.id;
@@ -217,5 +239,5 @@ export function useCardScanner() {
     } finally { pendingSave.current = false; }
   }
 
-  return { state, result, reviewedScan, confirmReview, invalidateReview, selectImage, removeImage, extract, save };
+  return { state, result, reviewedScan, duplicateWarning, cancelDuplicateSave, confirmReview, invalidateReview, selectImage, removeImage, extract, save };
 }

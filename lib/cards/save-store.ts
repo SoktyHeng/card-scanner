@@ -2,10 +2,12 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 import { SaveError, type CardSaveStore } from "./save-service";
+import { findDuplicateCards } from "./duplicate-check";
 
 export function createCardSaveStore(supabase: SupabaseClient<Database>, userId: string): CardSaveStore {
   const bucket = supabase.storage.from("card-images");
   return {
+    findDuplicates: (data, excludedId) => findDuplicateCards(supabase, userId, data, excludedId),
     async findCard(id) {
       const { data, error } = await supabase.from("cards").select("id")
         .eq("user_id", userId).eq("id", id).maybeSingle();
