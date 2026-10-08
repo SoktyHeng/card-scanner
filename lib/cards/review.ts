@@ -52,6 +52,7 @@ export interface ReviewDraft {
 }
 export interface ReviewedScan {
   originalImage: File;
+  originalBackImage?: File;
   rawText: string | null;
   aiExtraction: ExtractedCard;
   reviewedData: ReviewedCard;
@@ -103,6 +104,6 @@ export function validateReviewDraft(draft: ReviewDraft) {
     extraFields: draft.extraFields.map(({ label, key, value, confidence }) => ({ label, key, value, confidence })),
   });
 }
-export function prepareReviewedScan(originalImage: File, source: ExtractedCard, data: ReviewedCard): ReviewedScan {
-  return { originalImage, rawText: source.rawText, aiExtraction: structuredClone(source), reviewedData: reviewedCardSchema.parse(data) };
+export function prepareReviewedScan(originalImage: File, source: ExtractedCard, data: ReviewedCard, originalBackImage?: File): ReviewedScan {
+  return { originalImage, ...(originalBackImage ? { originalBackImage } : {}), rawText: source.rawText, aiExtraction: structuredClone(source), reviewedData: reviewedCardSchema.parse(data) };
 }

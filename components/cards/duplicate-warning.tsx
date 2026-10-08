@@ -12,7 +12,7 @@ export function DuplicateWarning({ warning, disabled, onSaveAnyway, onCancel }: 
   useEffect(() => { heading.current?.focus(); }, [warning]);
   return <section aria-labelledby={id} className="space-y-4 rounded-xl border border-amber-500/60 bg-amber-50/40 p-4 dark:bg-amber-950/20">
     <h2 id={id} ref={heading} tabIndex={-1} className="rounded text-lg font-semibold focus-visible:outline-2 focus-visible:outline-ring">Possible duplicate found</h2>
-    <p className="text-sm">These saved cards match your reviewed information. Check them before deciding. Viewing them opens a new tab so your review and image stay here.</p>
+    <p className="text-sm leading-relaxed">Check these cards before saving another copy. View existing opens a new tab and keeps your review here.</p>
     <ul className="space-y-3">
       {warning.matches.map(card => <li key={card.id} className="min-w-0 space-y-2 rounded-lg border bg-card p-3">
         <h3 dir="auto" className="break-words font-medium">{card.name || card.company || "Untitled card"}</h3>
@@ -23,7 +23,7 @@ export function DuplicateWarning({ warning, disabled, onSaveAnyway, onCancel }: 
       </li>)}
     </ul>
     <div className="flex flex-col gap-3 sm:flex-row">
-      <Button type="button" disabled={disabled} onClick={onSaveAnyway}>{disabled ? "Saving card…" : "Save anyway"}</Button>
+      <Button type="button" loading={disabled} onClick={onSaveAnyway}>{disabled ? "Saving card…" : "Save anyway"}</Button>
       <Button type="button" variant="outline" disabled={disabled} onClick={onCancel}>Cancel</Button>
     </div>
   </section>;

@@ -13,3 +13,5 @@ For a visible value with unclear meaning or no identifiable label, return label:
 Use [] when there are no additional fields. Lower confidence for ambiguous text, and omit unreadable fragments instead of completing them.
 overallConfidence expresses confidence in the extraction, not authenticity of the card. If nothing is readable, use null standard fields, null field confidences, null rawText, [], and overallConfidence: 0.
 No external lookup, guessing, or fabricated card information. Human review is required before any data is saved.`;
+
+export const TWO_SIDE_PROMPT = `${CARD_EXTRACTION_PROMPT}\nTwo labeled images show the FRONT and BACK of the same card. Read both together for context, but return separate front and back objects matching the supplied schema. Transcribe each side independently. Preserve conflicting values on their respective sides; never move, overwrite, or invent a value to resolve a conflict.`;

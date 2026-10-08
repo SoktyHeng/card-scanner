@@ -7,21 +7,21 @@ import { hasFieldValue } from "@/lib/cards/field-value";
 import { SavedCardFields } from "@/components/cards/saved-card-fields";
 import { cardColumns } from "@/lib/cards/management-schema";
 import { CardActions } from "@/components/cards/card-actions";
-import { SavedCardImage } from "@/components/cards/saved-card-image";
+import { FlippableCardImage } from "@/components/cards/flippable-card-image";
 import { Button } from "@/components/ui/button";
 export default async function SavedCardPage({ params }: { params: Promise<{ id: string }> }) {
   const { user, supabase } = await requireUser();
   const { id } = await params;
   const result = await getSavedCard(supabase, user.id, id);
   if (!result) notFound();
-  const { card, extraFields, imageUrl, imageUnavailable, extraFieldsUnavailable } = result;
+  const { card, extraFields, imageUrl, backImageUrl, imageUnavailable, extraFieldsUnavailable } = result;
   return <article className="mx-auto max-w-3xl space-y-6">
     <Link href={card.is_archived ? "/cards?status=archived" : "/cards"} className="inline-block rounded py-3 underline focus-visible:outline-2">Back to cards</Link>
-    <h1 className="break-words text-3xl font-semibold" dir="auto">{hasFieldValue(card.name) ? card.name : hasFieldValue(card.company) ? card.company : "Saved card"}</h1>
+    <h1 className="break-words text-3xl font-semibold tracking-tight sm:text-4xl" dir="auto">{hasFieldValue(card.name) ? card.name : hasFieldValue(card.company) ? card.company : "Saved card"}</h1>
     <p className="text-sm text-muted-foreground">Your reviewed card and original image.</p>
     {card.is_archived && <p className="rounded-lg border p-3">Archived card</p>}
     <CardActions id={id} archived={card.is_archived} />
-    {imageUrl && <SavedCardImage key={imageUrl} url={imageUrl} />}
+    <FlippableCardImage key={`${imageUrl}-${backImageUrl}`} frontUrl={imageUrl} backUrl={backImageUrl} />
     {imageUnavailable && <p role="alert" className="rounded-lg border p-3">Unable to load the private image. Reload this page to try again.</p>}
     {!card.original_image_path && <p className="text-sm text-muted-foreground">No original image is available.</p>}
     <SavedCardFields fields={reviewFieldOrder.map(key => ({ key, value: card[cardColumns[key]] }))} extraFields={extraFields} extraFieldsUnavailable={extraFieldsUnavailable} />

@@ -48,7 +48,7 @@ export const cardOutputSchema = z.strictObject({
   extraFields: z.array(extraFieldSchema).max(100),
 });
 
-export const extractedCardSchema = cardOutputSchema.superRefine((card, ctx) => {
+export const singleSideCardSchema = cardOutputSchema.superRefine((card, ctx) => {
   for (const key of standardFields) {
     if (card[key] !== null && !card[key].trim())
       ctx.addIssue({
@@ -101,6 +101,15 @@ export const extractedCardSchema = cardOutputSchema.superRefine((card, ctx) => {
           "Unclear fields require a null label, unknown_field key, and confidence below 0.5.",
       });
   });
+});
+
+export const twoSideOutputSchema = z.strictObject({ front: cardOutputSchema, back: cardOutputSchema });
+export const twoSideCardSchema = z.strictObject({ front: singleSideCardSchema, back: singleSideCardSchema });
+export const extractedCardSchema = singleSideCardSchema.safeExtend({
+  rawText: z.string().min(1).max(60020).nullable(),
+  sourceSides: twoSideCardSchema.optional(),
+  conflictingFields: z.array(z.enum(standardFields)).max(11).optional(),
+  hasSideConflicts: z.boolean().optional(),
 });
 
 export const extractionMessages = {

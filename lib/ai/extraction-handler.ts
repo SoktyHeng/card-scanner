@@ -1,7 +1,7 @@
 import "server-only";
 import { extractedCardSchema } from "./card-schema";
 import { ExtractionError } from "./errors";
-import { readExtractionImage } from "./upload";
+import { readExtractionImages } from "./upload";
 import { EXTRACTION_TIMEOUT_MS } from "./timeouts";
 import { prepareExtractionImage } from "./prepare-image";
 import type { ExtractedCard, ExtractionImage } from "./types";
@@ -15,6 +15,7 @@ export interface ExtractionDependencies {
   extract: (
     image: ExtractionImage,
     signal: AbortSignal,
+    back?: ExtractionImage,
   ) => Promise<ExtractedCard>;
 }
 
@@ -32,8 +33,10 @@ export function createExtractionHandler(deps: ExtractionDependencies) {
       }
       if (!authenticated) throw new ExtractionError("UNAUTHORIZED");
       if (typeof authenticated === "string") release = (deps.acquire ?? acquireExtraction)(authenticated);
-      const originalImage = await readExtractionImage(request);
+      const originals = await readExtractionImages(request);
+      const originalImage = originals.front;
       const image = await prepareExtractionImage(originalImage);
+      const back = originals.back ? await prepareExtractionImage(originals.back) : undefined;
       const signal = AbortSignal.any([
         request.signal,
         AbortSignal.timeout(EXTRACTION_TIMEOUT_MS),
@@ -44,7 +47,7 @@ export function createExtractionHandler(deps: ExtractionDependencies) {
         timeoutMs: EXTRACTION_TIMEOUT_MS,
       });
       const result = extractedCardSchema.safeParse(
-        await awaitExtraction(signal, () => deps.extract(image, signal)),
+        await awaitExtraction(signal, () => deps.extract(image, signal, back)),
       );
       if (!result.success) throw new ExtractionError("EXTRACTION_FAILED");
       console.info("Card extraction completed", { elapsedMs: Date.now() - startedAt });

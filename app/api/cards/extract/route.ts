@@ -17,5 +17,5 @@ export const POST = createExtractionHandler({
       throw new Error("Auth unavailable");
     return error || !data.user ? null : data.user.id;
   },
-  extract: extractCard,
+  extract: (image, signal, back) => extractCard(image, signal, undefined, back),
 });

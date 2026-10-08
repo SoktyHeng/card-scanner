@@ -36,6 +36,8 @@ export function useCardScanner() {
     message: null,
   });
   const activeImage = useRef<ImageSelection | null>(null);
+  const activeBackImage = useRef<ImageSelection | null>(null);
+  const [backImage, setBackImage] = useState<ImageSelection | null>(null);
   const selectionVersion = useRef(0);
   const pendingSelection = useRef<AbortController | null>(null);
   const pendingExtraction = useRef<AbortController | null>(null);
@@ -57,13 +59,15 @@ export function useCardScanner() {
       pendingExtraction.current?.abort();
       pendingExtraction.current = null;
       releaseImagePreview(activeImage.current);
+      releaseImagePreview(activeBackImage.current);
+      activeBackImage.current = null;
       activeImage.current = null;
       };
     },
     [],
   );
 
-  async function selectImage(file: File | undefined) {
+  async function selectImage(file: File | undefined, side: "front" | "back" = "front") {
     // Canceling the native picker must leave the current preview intact.
     if (!file) return;
     if (pendingExtraction.current || pendingSave.current || savedId.current) return;
@@ -82,13 +86,19 @@ export function useCardScanner() {
         releaseImagePreview(image);
         return;
       }
-      releaseImagePreview(activeImage.current);
-      activeImage.current = image;
+      if (side === "back") {
+        releaseImagePreview(activeBackImage.current);
+        activeBackImage.current = image;
+        setBackImage(image);
+      } else {
+        releaseImagePreview(activeImage.current);
+        activeImage.current = image;
+      }
       setResult(null);
       setReviewedScan(null);
       setDuplicateWarning(null);
       submissionId.current = null;
-      setState({ status: "image_selected", image, message: null });
+      setState(activeImage.current ? { status: "image_selected", image: activeImage.current, message: null } : { status: "idle", image: null, message: null });
     } catch (error: unknown) {
       if (version !== selectionVersion.current) return;
       const message =
@@ -107,7 +117,7 @@ export function useCardScanner() {
     }
   }
 
-  function removeImage() {
+  function removeImage(side: "front" | "back" = "front") {
     if (pendingSave.current || savedId.current) return;
     selectionVersion.current += 1;
     pendingSelection.current?.abort();
@@ -118,9 +128,15 @@ export function useCardScanner() {
     setReviewedScan(null);
     setDuplicateWarning(null);
     submissionId.current = null;
-    releaseImagePreview(activeImage.current);
-    activeImage.current = null;
-    setState({ status: "idle", image: null, message: null });
+    if (side === "back") {
+      releaseImagePreview(activeBackImage.current);
+      activeBackImage.current = null;
+      setBackImage(null);
+    } else {
+      releaseImagePreview(activeImage.current);
+      activeImage.current = null;
+    }
+    setState(activeImage.current ? { status: "image_selected", image: activeImage.current, message: null } : { status: "idle", image: null, message: null });
   }
 
   async function extract() {
@@ -145,6 +161,7 @@ export function useCardScanner() {
     try {
       const form = new FormData();
       form.append("image", image.file);
+      if (activeBackImage.current) form.append("backImage", activeBackImage.current.file);
       const response = await fetch("/api/cards/extract", {
         method: "POST",
         body: form,
@@ -181,10 +198,12 @@ export function useCardScanner() {
 
   function confirmReview(data: ReviewedCard) {
     if (!activeImage.current || !result || pendingExtraction.current || pendingSelection.current || pendingSave.current || savedId.current) return;
-    setReviewedScan(prepareReviewedScan(activeImage.current.file, result, data));
+    const scan = prepareReviewedScan(activeImage.current.file, result, data, activeBackImage.current?.file);
+    setReviewedScan(scan);
     setDuplicateWarning(null);
     submissionId.current = createSubmissionId();
     setState({ status: "reviewed", image: activeImage.current, message: null });
+    return scan;
   }
 
   function invalidateReview() {
@@ -202,18 +221,21 @@ export function useCardScanner() {
     setState({ status: "reviewed", image: activeImage.current, message: null });
   }
 
-  async function save(saveAnyway = false): Promise<string | null> {
-    if (!reviewedScan || !activeImage.current || !submissionId.current || pendingSave.current || savedId.current || pendingSelection.current || pendingExtraction.current) return null;
+  async function save(saveAnyway = false, data?: ReviewedCard): Promise<string | null> {
+    const scan = data && (!reviewedScan || JSON.stringify(data) !== JSON.stringify(reviewedScan.reviewedData))
+      ? confirmReview(data) : reviewedScan;
+    if (!scan || !activeImage.current || !submissionId.current || pendingSave.current || savedId.current || pendingSelection.current || pendingExtraction.current) return null;
     if ((duplicateWarning && !saveAnyway) || (saveAnyway && !duplicateWarning)) return null;
     const image = activeImage.current;
     pendingSave.current = true;
     setState({ status: "saving", image, message: null });
     try {
       const form = new FormData();
-      form.append("image", reviewedScan.originalImage);
+      form.append("image", scan.originalImage);
+      if (scan.originalBackImage) form.append("backImage", scan.originalBackImage);
       form.append("data", JSON.stringify({
         submissionId: submissionId.current, reviewConfirmed: true,
-        aiExtraction: reviewedScan.aiExtraction, reviewedData: reviewedScan.reviewedData,
+        aiExtraction: scan.aiExtraction, reviewedData: scan.reviewedData,
         ...(saveAnyway && duplicateWarning ? { duplicateAcknowledgement: { confirmed: true, fingerprint: duplicateWarning.fingerprint } } : {}),
       }));
       const response = await fetch("/api/cards", { method: "POST", body: form, signal: AbortSignal.timeout(90_000) });
@@ -239,5 +261,5 @@ export function useCardScanner() {
     } finally { pendingSave.current = false; }
   }
 
-  return { state, result, reviewedScan, duplicateWarning, cancelDuplicateSave, confirmReview, invalidateReview, selectImage, removeImage, extract, save };
+  return { state, backImage, result, reviewedScan, duplicateWarning, cancelDuplicateSave, confirmReview, invalidateReview, selectImage, removeImage, extract, save };
 }

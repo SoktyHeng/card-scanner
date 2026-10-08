@@ -5,7 +5,7 @@ import { ExtractionError } from "./errors";
 import type { ExtractionImage } from "./types";
 
 // Bound the complete body even when Content-Length is absent or dishonest.
-export const MAX_MULTIPART_BYTES = MAX_IMAGE_BYTES + 64 * 1024;
+export const MAX_MULTIPART_BYTES = 2 * MAX_IMAGE_BYTES + 64 * 1024;
 export async function readBoundedMultipart(request: Request, maxBytes = MAX_MULTIPART_BYTES): Promise<FormData> {
   if (
     !request.headers
@@ -50,15 +50,22 @@ export async function readBoundedMultipart(request: Request, maxBytes = MAX_MULT
 }
 
 export async function readExtractionImage(request: Request): Promise<ExtractionImage> {
+  return (await readExtractionImages(request)).front;
+}
+
+export async function readExtractionImages(request: Request): Promise<{ front: ExtractionImage; back?: ExtractionImage }> {
   const form = await readBoundedMultipart(request);
   const images = form.getAll("image");
   if (
     images.length !== 1 ||
-    [...form.keys()].some((key) => key !== "image") ||
+    [...form.keys()].some((key) => key !== "image" && key !== "backImage") ||
+    form.getAll("backImage").length > 1 ||
     !(images[0] instanceof File)
   )
     throw new ExtractionError("INVALID_UPLOAD");
-  return validateOriginalImage(images[0]);
+  const back = form.get("backImage");
+  if (back !== null && !(back instanceof File)) throw new ExtractionError("INVALID_UPLOAD");
+  return { front: await validateOriginalImage(images[0]), ...(back instanceof File ? { back: await validateOriginalImage(back) } : {}) };
 }
 
 export async function validateOriginalImage(file: File): Promise<ExtractionImage> {

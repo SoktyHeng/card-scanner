@@ -16,6 +16,7 @@ import { CardScanner } from "../components/scanner/card-scanner";
 import { useCardScanner } from "../components/scanner/use-card-scanner";
 import { createReviewDraft, editStandardField, validateReviewDraft } from "../lib/cards/review";
 import { businessCard, emptyCard } from "./fixtures/extraction";
+import { combineCardSides } from "../lib/ai/card-sides";
 import {
   createImagePreview,
   MAX_IMAGE_BYTES,
@@ -26,6 +27,15 @@ import {
 const dom = new JSDOM("<!doctype html><html><body></body></html>", {
   url: "http://localhost",
 });
+dom.window.HTMLDialogElement.prototype.showModal = function () { this.setAttribute("open", ""); };
+dom.window.HTMLDialogElement.prototype.close = function () {
+  this.removeAttribute("open");
+  this.dispatchEvent(new dom.window.Event("close"));
+};
+function confirmSave(view: ReturnType<typeof render>) {
+  fireEvent.click(view.getByRole("button", { name: "Save card" }));
+  fireEvent.click(view.getByRole("button", { name: "Confirm" }));
+}
 const urls = new Map<string, Blob>();
 const revoked: string[] = [];
 const originalCreate = URL.createObjectURL;
@@ -349,7 +359,7 @@ test("Extract is explicit, duplicate requests are prevented, and validated resul
   assert.equal(calls, 1);
 });
 
-test("scan review confirmation is invalidated by edits and cleared by re-extraction and removal", async () => {
+test("save dialog cancel keeps the draft and makes no request; new edits are validated before saving", async () => {
   let requests = 0;
   mock.method(globalThis, "fetch", async () => {
     requests++;
@@ -359,20 +369,31 @@ test("scan review confirmation is invalidated by edits and cleared by re-extract
   fireEvent.change(view.getByLabelText("Upload card image"), { target: { files: [file(png)] } });
   await view.findByText("card.png");
   fireEvent.click(view.getByRole("button", { name: "Extract information" }));
-  await view.findByRole("heading", { name: "Review card information" });
-  fireEvent.click(view.getByRole("button", { name: "Confirm reviewed information" }));
-  assert.ok(view.getByText(/Review confirmed\. Nothing has been saved/));
+  await view.findByLabelText("Name");
+  assert.ok(!view.queryByRole("button", { name: "Confirm reviewed information" }));
+  fireEvent.click(view.getByRole("button", { name: "Save card" }));
+  assert.ok(view.getByRole("dialog", { name: "Save this card?" }));
+  assert.equal(requests, 1);
+  fireEvent.click(view.getByRole("button", { name: "Cancel" }));
+  assert.ok(!view.queryByRole("dialog"));
+  assert.ok(document.activeElement === view.getByRole("button", { name: "Save card" }));
   fireEvent.change(view.getByLabelText("Name"), { target: { value: "Corrected name" } });
-  assert.equal(view.queryByText(/Review confirmed\. Nothing has been saved/), null);
-  assert.equal(requests, 1, "Review and confirmation must not make saving requests");
-  fireEvent.click(view.getByRole("button", { name: "Confirm reviewed information" }));
-  assert.ok(view.getByText(/Review confirmed\. Nothing has been saved/));
+  fireEvent.click(view.getByRole("button", { name: "Save card" }));
+  fireEvent.click(view.getByRole("button", { name: "Cancel" }));
+  assert.ok(view.getByDisplayValue("Corrected name"));
+  assert.equal(requests, 1);
+  fireEvent.change(view.getByLabelText("Field to add"), { target: { value: "standard:email" } });
+  fireEvent.click(view.getByRole("button", { name: "Add field" }));
+  fireEvent.change(view.getByLabelText("Email"), { target: { value: "invalid" } });
+  fireEvent.click(view.getByRole("button", { name: "Save card" }));
+  assert.ok(view.getByRole("alert"));
+  assert.ok(!view.queryByRole("dialog"));
+  assert.equal(requests, 1);
   fireEvent.click(view.getByRole("button", { name: "Extract again" }));
   await view.findByDisplayValue("JOHN SMITH");
-  assert.equal(view.queryByDisplayValue("Corrected name"), null);
-  assert.equal(view.queryByText(/Review confirmed\. Nothing has been saved/), null);
+  assert.ok(!view.queryByDisplayValue("Corrected name"));
   fireEvent.click(view.getByRole("button", { name: "Remove image" }));
-  assert.equal(view.queryByRole("heading", { name: "Review card information" }), null);
+  assert.ok(!view.queryByRole("heading", { name: "Review card information" }));
   assert.equal(requests, 2);
 });
 
@@ -420,12 +441,14 @@ test("save requires confirmation, blocks duplicate clicks, keeps the draft on fa
   await view.findByText("card.png");
   fireEvent.click(view.getByRole("button", { name: "Extract information" }));
   await view.findByLabelText("Name");
-  assert.equal(view.queryByRole("button", { name: "Save card" }), null);
+  assert.ok(!view.queryByRole("button", { name: "Confirm reviewed information" }));
   fireEvent.change(view.getByLabelText("Name"), { target: { value: "Corrected name" } });
-  fireEvent.click(view.getByRole("button", { name: "Confirm reviewed information" }));
   const save = view.getByRole("button", { name: "Save card" });
   fireEvent.click(save);
-  fireEvent.click(save);
+  assert.equal(saves, 0);
+  const confirm = view.getByRole("button", { name: "Confirm" });
+  fireEvent.click(confirm);
+  fireEvent.click(confirm);
   assert.equal(saves, 1);
   assert.equal((view.getByRole("button", { name: "Saving card…" }) as HTMLButtonElement).disabled, true);
   assert.equal((view.getByLabelText("Name") as HTMLInputElement).disabled, false);
@@ -436,12 +459,12 @@ test("save requires confirmation, blocks duplicate clicks, keeps the draft on fa
   assert.equal(view.queryByText("secret-error"), null);
   assert.ok(view.getByDisplayValue("Corrected name"));
   assert.ok(view.getByAltText("Selected card image"));
-  fireEvent.click(view.getByRole("button", { name: "Retry saving card" }));
+  confirmSave(view);
   await waitFor(() => assert.match(view.getByRole("alert").textContent!, /Unable to upload/));
   assert.equal(saves, 2);
   assert.equal(submissionIds[0], submissionIds[1]);
   fireEvent.change(view.getByLabelText("Name"), { target: { value: "Another correction" } });
-  assert.equal(view.queryByRole("button", { name: "Retry saving card" }), null);
+  assert.ok(view.getByRole("button", { name: "Save card" }));
 });
 
 test("successful save returns a card destination and prevents another submission", async () => {
@@ -480,8 +503,7 @@ test("duplicate warning preserves image and draft, cancel sends nothing, and edi
   await view.findByText("card.png");
   fireEvent.click(view.getByRole("button", { name: "Extract information" }));
   await view.findByLabelText("Name");
-  fireEvent.click(view.getByRole("button", { name: "Confirm reviewed information" }));
-  fireEvent.click(view.getByRole("button", { name: "Save card" }));
+  confirmSave(view);
   const heading = await view.findByRole("heading", { name: "Possible duplicate found" });
   assert.ok(document.activeElement === heading);
   const existing = view.getByRole("link", { name: /View existing Existing/ });
@@ -493,13 +515,12 @@ test("duplicate warning preserves image and draft, cancel sends nothing, and edi
   await waitFor(() => assert.ok(document.activeElement === view.getByRole("button", { name: "Save card" })));
   assert.equal(sent.length, 1);
   assert.ok(view.getByAltText("Selected card image"));
-  fireEvent.click(view.getByRole("button", { name: "Save card" }));
+  confirmSave(view);
   await view.findByRole("button", { name: "Save anyway" });
   assert.equal(sent[0].submissionId, sent[1].submissionId);
   fireEvent.change(view.getByLabelText("Name"), { target: { value: "Edited after warning" } });
   assert.equal(view.queryByRole("button", { name: "Save anyway" }), null);
-  fireEvent.click(view.getByRole("button", { name: "Confirm reviewed information" }));
-  fireEvent.click(view.getByRole("button", { name: "Save card" }));
+  confirmSave(view);
   await view.findByRole("button", { name: "Save anyway" });
   assert.equal(sent[2].reviewedData.name, "Edited after warning");
   assert.notEqual(sent[2].submissionId, sent[1].submissionId);
@@ -562,15 +583,14 @@ test("expired save session keeps reviewed values and original image while sign-i
   fireEvent.click(view.getByRole("button", { name: "Extract information" }));
   await view.findByLabelText("Name");
   fireEvent.change(view.getByLabelText("Name"), { target: { value: "My preserved correction" } });
-  fireEvent.click(view.getByRole("button", { name: "Confirm reviewed information" }));
-  fireEvent.click(view.getByRole("button", { name: "Save card" }));
+  confirmSave(view);
   await view.findByRole("alert");
   assert.match(view.getByRole("alert").textContent!, /session has expired/);
   assert.equal(view.queryByText("private auth diagnostic"), null);
   assert.equal((view.getByLabelText("Name") as HTMLInputElement).value, "My preserved correction");
   assert.ok(view.getByAltText("Selected card image"));
   assert.equal(view.getByRole("link", { name: /Sign in in a new tab/ }).getAttribute("target"), "_blank");
-  fireEvent.click(view.getByRole("button", { name: "Retry saving card" }));
+  confirmSave(view);
   await waitFor(() => assert.equal(saves, 2));
 });
 
@@ -667,4 +687,41 @@ test("canceling or unmounting extraction aborts the request and ignores late res
     assert.equal(view.queryByText("JOHN SMITH"), null);
     assert.equal(urls.size, 0);
   }
+});
+
+
+test("two-sided capture extracts and saves both originals after review, while back removal preserves the front", async () => {
+  const source = combineCardSides({ front: businessCard(), back: emptyCard() });
+  let saves = 0;
+  mock.method(globalThis, "fetch", async (url: string, init: RequestInit) => {
+    const form = init.body as FormData;
+    assert.equal((form.get("image") as File).name, "front.png");
+    assert.equal((form.get("backImage") as File).name, "back.png");
+    if (url === "/api/cards/extract") return Response.json({ success: true, data: source });
+    saves++;
+    const data = JSON.parse(String(form.get("data")));
+    assert.deepEqual(data.aiExtraction.sourceSides, source.sourceSides);
+    assert.equal(data.reviewConfirmed, true);
+    return Response.json({ success: false, error: { code: "UPLOAD_FAILED", message: "failed" } }, { status: 503 });
+  });
+  const view = render(createElement(CardScanner));
+  fireEvent.change(view.getByLabelText("Upload card image"), { target: { files: [file(png, "front.png")] } });
+  await view.findByText("front.png");
+  fireEvent.click(view.getByRole("button", { name: "Back (optional)" }));
+  fireEvent.change(view.getByLabelText("Upload back card image"), { target: { files: [file(png, "back.png")] } });
+  await view.findByText("back.png");
+  fireEvent.click(view.getByRole("button", { name: "Extract information" }));
+  await view.findByLabelText("Name");
+  fireEvent.click(view.getByRole("button", { name: "Save card" }));
+  fireEvent.click(view.getByRole("button", { name: "Cancel" }));
+  assert.equal(saves, 0);
+  confirmSave(view);
+  await view.findByRole("alert");
+  assert.equal(saves, 1);
+  assert.ok(view.getByDisplayValue("JOHN SMITH"));
+  assert.ok(view.getByText("back.png"));
+  fireEvent.click(view.getByRole("button", { name: "Remove back image" }));
+  assert.ok(!view.queryByLabelText("Name"));
+  fireEvent.click(view.getByRole("button", { name: "Front (required)" }));
+  assert.ok(view.getByText("front.png"));
 });

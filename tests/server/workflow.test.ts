@@ -25,6 +25,15 @@ test("scan → review → save → detail → edit → archive → restore → d
       assert.equal(new Headers(init?.headers).get("authorization"), "Bearer owner-session");
       const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
       const method = init?.method ?? "GET";
+      if (url.pathname === "/rest/v1/card_images") return Response.json([]);
+      if (url.pathname === "/rest/v1/rpc/save_card_with_images") {
+        const payload = JSON.parse(String(init?.body));
+        const record = payload.p_card as CardRow;
+        assert.equal(record.user_id, owner);
+        assert.equal(payload.p_images.length, 1);
+        rows.set(record.id, { ...record, created_at: "2026-10-07T00:00:00Z", updated_at: "2026-10-07T00:00:00Z" });
+        return Response.json(record.id);
+      }
       if (url.pathname === "/rest/v1/cards") {
         if (method === "POST") {
           const record = JSON.parse(String(init?.body)) as CardRow;

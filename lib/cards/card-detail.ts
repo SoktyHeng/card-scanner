@@ -5,6 +5,7 @@ import type { Database } from "@/types/database";
 import { reviewedCardSchema } from "./review";
 import { ownsImagePath } from "./management-schema";
 import { cardSearchQuerySchema } from "./search";
+import { loadCardImagePaths } from "./image-paths";
 
 export const SIGNED_IMAGE_SECONDS = 300;
 export async function getSavedCard(supabase: SupabaseClient<Database>, userId: string, id: string) {
@@ -15,16 +16,18 @@ export async function getSavedCard(supabase: SupabaseClient<Database>, userId: s
   const extras = reviewedCardSchema.shape.extraFields.safeParse(data.extra_fields);
   let imageUrl: string | null = null;
   let imageUnavailable = false;
-  const path = data.original_image_path;
-  if (path) {
-    if (!ownsImagePath(userId, id, path)) imageUnavailable = true;
-    else {
-      const signed = await supabase.storage.from("card-images").createSignedUrl(path, SIGNED_IMAGE_SECONDS);
-      imageUrl = signed.data?.signedUrl ?? null;
-      imageUnavailable = !!signed.error || !imageUrl;
+  let backImageUrl: string | null = null;
+  try {
+    const { images } = await loadCardImagePaths(supabase, userId, id, data.original_image_path);
+    for (const image of images) {
+      const signed = await supabase.storage.from("card-images").createSignedUrl(image.storage_path, SIGNED_IMAGE_SECONDS);
+      const url = signed.error ? null : signed.data?.signedUrl ?? null;
+      if (!url) imageUnavailable = true;
+      if (image.side === "front") imageUrl = url;
+      else backImageUrl = url;
     }
-  }
-  return { card: data, extraFields: extras.success ? extras.data : [], extraFieldsUnavailable: !extras.success, imageUrl, imageUnavailable };
+  } catch { imageUnavailable = true; }
+  return { card: data, extraFields: extras.success ? extras.data : [], extraFieldsUnavailable: !extras.success, imageUrl, backImageUrl, imageUnavailable };
 }
 
 export const CARDS_PER_PAGE = 24;

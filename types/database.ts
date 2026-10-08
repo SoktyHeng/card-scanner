@@ -32,6 +32,12 @@ export type CardRow = {
 export type Database = {
   public: {
     Tables: {
+      card_images: {
+        Row: { id: string; card_id: string; side: "front" | "back"; storage_path: string; created_at: string };
+        Insert: { id?: string; card_id: string; side: "front" | "back"; storage_path: string; created_at?: string };
+        Update: { side?: "front" | "back"; storage_path?: string };
+        Relationships: [];
+      };
       cards: {
         Row: CardRow;
         Insert: Partial<CardRow> & Pick<CardRow, "user_id">;
@@ -41,6 +47,7 @@ export type Database = {
     };
     Views: { [_ in never]: never };
     Functions: {
+      save_card_with_images: { Args: { p_card: Json; p_images: Json }; Returns: string };
       search_cards: { Args: { p_query: string }; Returns: CardRow[] };
     };
     Enums: { [_ in never]: never };

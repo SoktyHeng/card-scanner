@@ -13,11 +13,12 @@ export class DuplicateWarningError extends SaveError {
   constructor(readonly warning: DuplicateWarning) { super("POSSIBLE_DUPLICATES"); }
 }
 export type CardInsert = Database["public"]["Tables"]["cards"]["Insert"];
+export type CardImageInsert = Database["public"]["Tables"]["card_images"]["Insert"];
 export interface CardSaveStore {
   findCard: (id: string) => Promise<{ id: string } | null>;
   findDuplicates: (data: DuplicateInput, excludedId: string) => Promise<DuplicateMatch[]>;
   upload: (path: string, image: ExtractionImage) => Promise<"uploaded" | "exists">;
-  insert: (record: CardInsert) => Promise<void>;
+  insert: (record: CardInsert, images: CardImageInsert[]) => Promise<void>;
   remove: (path: string) => Promise<boolean>;
 }
 export interface SaveContext { userId: string; store: CardSaveStore }
@@ -51,7 +52,7 @@ export function buildCardInsert(userId: string, id: string, path: string, payloa
 }
 
 const inFlight = new Set<string>();
-export async function saveReviewedCard(context: SaveContext, input: SaveCardPayload, image: ExtractionImage) {
+export async function saveReviewedCard(context: SaveContext, input: SaveCardPayload, image: ExtractionImage, back?: ExtractionImage) {
   const payload = saveCardSchema.parse(input);
   const id = submissionCardId(context.userId, payload.submissionId);
   const key = `${context.userId}/${id}`;
@@ -68,32 +69,28 @@ export async function saveReviewedCard(context: SaveContext, input: SaveCardPayl
       if (payload.duplicateAcknowledgement?.fingerprint !== fingerprint)
         throw new DuplicateWarningError({ matches, fingerprint });
     }
-    const extension = image.mimeType === "image/jpeg" ? "jpg" : image.mimeType === "image/png" ? "png" : "webp";
-    const path = `${key}/original.${extension}`;
-    const uploaded = await context.store.upload(path, image);
-    if (uploaded === "exists") {
-      const committed = await context.store.findCard(id);
-      if (committed) return committed.id;
-      // An earlier response may have been lost after upload. Retry the same
-      // primary key without replacing the original or deleting a shared image.
-      try { await context.store.insert(buildCardInsert(context.userId, id, path, payload)); }
-      catch {
-        const retried = await context.store.findCard(id);
-        if (retried) return retried.id;
-        throw new SaveError("SAVE_IN_PROGRESS");
-      }
-      return id;
-    }
+    const extension = (value: ExtractionImage) => value.mimeType === "image/jpeg" ? "jpg" : value.mimeType === "image/png" ? "png" : "webp";
+    const path = `${key}/original.${extension(image)}`;
+    const entries = [{ side: "front" as const, path, image }, ...(back ? [{ side: "back" as const, path: `${key}/back.${extension(back)}`, image: back }] : [])];
+    const uploaded: string[] = [];
+    let reused = false;
     try {
-      await context.store.insert(buildCardInsert(context.userId, id, path, payload));
-    } catch {
+      for (const entry of entries) {
+        const outcome = await context.store.upload(entry.path, entry.image);
+        if (outcome === "uploaded") uploaded.push(entry.path);
+        else reused = true;
+      }
+      await context.store.insert(buildCardInsert(context.userId, id, path, payload), entries.map(entry => ({ card_id: id, side: entry.side, storage_path: entry.path })));
+    } catch (error) {
       // A transport error can follow a committed insert. Check before deleting
       // its image; if this check also fails, preserve it and report uncertainty.
       const committed = await context.store.findCard(id);
       if (committed) return committed.id;
-      let cleaned = false;
-      try { cleaned = await context.store.remove(path); } catch { /* Controlled failure below. */ }
-      if (!cleaned) throw new SaveError("CLEANUP_FAILED");
+      // Preserve reused images: they may belong to another in-flight retry.
+      if (reused) throw new SaveError("SAVE_IN_PROGRESS");
+      const cleanup = await Promise.allSettled(uploaded.map(value => context.store.remove(value)));
+      if (cleanup.some(value => value.status === "rejected" || !value.value)) throw new SaveError("CLEANUP_FAILED");
+      if (error instanceof SaveError && error.code === "UPLOAD_FAILED") throw error;
       throw new SaveError("INSERT_FAILED");
     }
     console.info("Card created");

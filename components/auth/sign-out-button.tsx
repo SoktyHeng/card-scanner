@@ -6,7 +6,7 @@ export function SignOutButton() {
   const [state, action, pending] = useActionState(signOut, {});
   return (
     <form action={action}>
-      <Button type="submit" variant="outline" disabled={pending}>
+      <Button type="submit" variant="outline" loading={pending}>
         {pending ? "Signing out…" : "Sign out"}
       </Button>
       {state.error && (

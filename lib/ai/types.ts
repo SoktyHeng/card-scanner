@@ -11,5 +11,5 @@ export interface ExtractionImage {
 
 // Providers return untrusted data; the service always validates it.
 export interface CardExtractor {
-  extract(image: ExtractionImage, signal: AbortSignal): Promise<unknown>;
+  extract(image: ExtractionImage, signal: AbortSignal, back?: ExtractionImage): Promise<unknown>;
 }

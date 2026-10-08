@@ -2,7 +2,7 @@ import "./fixtures/dom";
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 import { createElement } from "react";
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { CardActionControls } from "../components/cards/card-actions";
 import { CardEditControls } from "../components/cards/card-edit-form";
 import { cardOperation } from "../components/cards/card-operation";
@@ -38,7 +38,9 @@ test("edit saving prevents duplicate submissions, keeps corrected draft after fa
   fireEvent.click(button); fireEvent.click(button);
   assert.equal(calls, 1);
   assert.ok(view.getByRole("status").textContent?.includes("Saving"));
-  finish!(Response.json({ success: false, error: { code: "OPERATION_FAILED", message: "Unable to save changes." } }, { status: 503 }));
+  assert.equal(button.getAttribute("aria-busy"), "true");
+  assert.ok(button.querySelector('svg[aria-hidden="true"]'));
+  await act(async () => { finish!(Response.json({ success: false, error: { code: "OPERATION_FAILED", message: "Unable to save changes." } }, { status: 503 })); });
   await waitFor(() => assert.match(view.getByRole("alert").textContent!, /draft has been kept/));
   assert.equal((view.getByLabelText("Name") as HTMLInputElement).value, "My corrected name");
   assert.equal(saved, false);
@@ -63,6 +65,10 @@ test("permanent deletion requires a second explicit confirmation and cancel perf
   assert.equal(calls.length, 0);
   fireEvent.click(view.getByRole("button", { name: "Delete permanently" }));
   fireEvent.click(view.getByRole("button", { name: "Confirm permanent deletion" }));
+  const deletingButton = view.getByRole("button", { name: "Deleting…" });
+  assert.equal(deletingButton.getAttribute("aria-busy"), "true");
+  assert.ok(deletingButton.querySelector('svg[aria-hidden="true"]'));
+  assert.ok((deletingButton as HTMLButtonElement).disabled);
   await waitFor(() => assert.equal(completed, true));
   assert.deepEqual(calls, [{ method: "DELETE", body: { confirmed: true } }]);
 });
@@ -80,10 +86,14 @@ test("archive/restore disable duplicate operations and show controlled session o
     fireEvent.click(button); fireEvent.click(button);
     assert.equal(calls, 1);
     assert.equal((button as HTMLButtonElement).disabled, true);
+    assert.equal(button.getAttribute("aria-busy"), "true");
+    assert.ok(button.querySelector('svg[aria-hidden="true"]'));
+    assert.ok(!view.getByRole("button", { name: "Delete permanently" }).querySelector("svg"));
     finish!(Response.json({ success: false, error: { code: "UNAUTHORIZED", message: "Your session has expired." } }, { status: 401 }));
     await waitFor(() => assert.match(view.getByRole("alert").textContent!, /session has expired/));
     assert.ok(view.getByRole("link", { name: "Sign in in a new tab" }));
     assert.equal((button as HTMLButtonElement).disabled, false);
+    assert.ok(!button.querySelector("svg"));
     view.unmount();
   }
 });

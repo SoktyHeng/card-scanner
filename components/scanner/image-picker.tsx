@@ -10,11 +10,13 @@ export function ImagePicker({
   hasImage,
   disabled,
   onSelect,
+  side,
 }: {
   mode: "camera" | "upload";
   hasImage: boolean;
   disabled: boolean;
   onSelect: (file: File | undefined) => void;
+  side?: "front" | "back";
 }) {
   const input = useRef<HTMLInputElement>(null);
   const id = useId();
@@ -43,7 +45,7 @@ export function ImagePicker({
         accept={camera ? "image/*" : IMAGE_ACCEPT}
         capture={camera ? "environment" : undefined}
         disabled={disabled}
-        aria-label={camera ? "Capture card photo" : "Upload card image"}
+        aria-label={side ? `${camera ? "Capture" : "Upload"} ${side} card ${camera ? "photo" : "image"}` : camera ? "Capture card photo" : "Upload card image"}
         className="sr-only"
         tabIndex={-1}
         onChange={change}

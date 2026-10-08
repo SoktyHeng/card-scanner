@@ -23,8 +23,8 @@ export function createCardSaveStore(supabase: SupabaseClient<Database>, userId: 
       }
       return "uploaded";
     },
-    async insert(record) {
-      const { error } = await supabase.from("cards").insert(record);
+    async insert(record, images) {
+      const { error } = await supabase.rpc("save_card_with_images", { p_card: record, p_images: images });
       if (error) throw new SaveError("INSERT_FAILED");
     },
     async remove(path) {

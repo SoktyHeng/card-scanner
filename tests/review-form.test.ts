@@ -10,6 +10,10 @@ import type { ReviewedCard } from "../lib/cards/review";
 import { createReviewDraft, reviewFieldOrder, validateReviewDraft } from "../lib/cards/review";
 
 afterEach(cleanup);
+function submitReview(view: ReturnType<typeof render>, editing = false) {
+  fireEvent.click(view.getByRole("button", { name: editing ? "Save changes" : "Save card" }));
+  if (!editing && view.queryByRole("dialog")) fireEvent.click(view.getByRole("button", { name: "Confirm" }));
+}
 
 test("saved-card editing starts with corrected data instead of AI values and preserves sources", () => {
   const source = businessCard();
@@ -50,12 +54,12 @@ test("review renders standard fields first, edits/adds/removes extras, and valid
   fireEvent.change(view.getByLabelText("Value for additional field 1"), { target: { value: "EMP-2" } });
   fireEvent.click(view.getByRole("button", { name: "Add field" }));
   await waitFor(() => assert.ok(document.activeElement === view.getByLabelText("Label for additional field 2")));
-  fireEvent.click(view.getByRole("button", { name: "Confirm reviewed information" }));
+  submitReview(view);
   assert.equal(confirmed.length, 0);
   assert.match(view.getByRole("alert").textContent!, /Enter a value/);
   assert.equal(view.getByLabelText("Value for additional field 2").getAttribute("aria-invalid"), "true");
   fireEvent.change(view.getByLabelText("Value for additional field 2"), { target: { value: "Gold" } });
-  fireEvent.click(view.getByRole("button", { name: "Confirm reviewed information" }));
+  submitReview(view);
   assert.equal(confirmed.length, 1);
   assert.equal(confirmed[0].name, "សុខា");
   assert.equal(confirmed[0].fieldConfidences.name, null);
@@ -95,13 +99,13 @@ test("confidence boundaries, unknown fields and empty results remain confirmable
   source.extraFields.push({ label: null, key: "unknown_field", value: "ABC-7788", confidence: 0.35 });
   const unknown = render(createElement(CardReviewForm, { extraction: source, confirmed: false, onConfirm: () => { confirmations++; }, onChange: () => {} }));
   assert.ok(unknown.getByText(/Unknown field — review/));
-  fireEvent.click(unknown.getByRole("button", { name: "Confirm reviewed information" }));
+  submitReview(unknown);
   assert.equal(confirmations, 1);
   unknown.unmount();
   const empty = render(createElement(CardReviewForm, { extraction: emptyCard(), confirmed: false, onConfirm: () => { confirmations++; }, onChange: () => {} }));
   assert.ok(empty.getByText(/No readable fields/));
   assert.equal(empty.queryByLabelText("Name"), null);
-  fireEvent.click(empty.getByRole("button", { name: "Confirm reviewed information" }));
+  submitReview(empty);
   assert.equal(confirmations, 2);
 });
 
@@ -156,12 +160,12 @@ test("empty cards allow manual standard/custom entry, custom clearing keeps focu
     fireEvent.change(value, { target: { value: "" } });
     assert.ok(document.activeElement === value);
     assert.ok(view.getByLabelText("Value for additional field 1") === value);
-    fireEvent.click(view.getByRole("button", { name: editing ? "Save changes" : "Confirm reviewed information" }));
+    submitReview(view, editing);
     assert.equal(Boolean(saved), false);
     assert.match(view.getByRole("alert").textContent!, /Enter a value or remove/);
     fireEvent.click(view.getByRole("button", { name: "Remove field 1" }));
     assert.equal(view.queryByText("Additional fields"), null);
-    fireEvent.click(view.getByRole("button", { name: editing ? "Save changes" : "Confirm reviewed information" }));
+    submitReview(view, editing);
     assert.equal(saved?.name, "Manual name");
     assert.deepEqual(saved?.extraFields, []);
     view.unmount();
@@ -178,12 +182,12 @@ test("hidden source extras can be revealed explicitly or by validation without l
   fireEvent.change(view.getByLabelText("Field to add"), { target: { value: "extra:ai-0" } });
   fireEvent.click(view.getByRole("button", { name: "Add field" }));
   await waitFor(() => assert.ok(document.activeElement === view.getByLabelText("Value for additional field 1")));
-  fireEvent.click(view.getByRole("button", { name: "Confirm reviewed information" }));
+  submitReview(view);
   assert.equal(view.getByLabelText("Value for additional field 1").getAttribute("aria-invalid"), "true");
   assert.deepEqual(source, snapshot);
   view.unmount();
   const implicit = render(createElement(CardReviewForm, { extraction: source, confirmed: false, onConfirm: () => {}, onChange: () => {} }));
-  fireEvent.click(implicit.getByRole("button", { name: "Confirm reviewed information" }));
+  submitReview(implicit);
   assert.equal(implicit.getByLabelText("Value for additional field 1").getAttribute("aria-invalid"), "true");
 });
 
@@ -193,7 +197,7 @@ test("fully populated forms show every standard value, while empty corrected edi
   let saved: ReviewedCard | undefined;
   const full = render(createElement(CardReviewForm, { extraction: source, confirmed: false, onConfirm: data => { saved = data; }, onChange: () => {} }));
   assert.equal(full.container.querySelectorAll('input:not([type="hidden"]), textarea').length, reviewFieldOrder.length + 2);
-  fireEvent.click(full.getByRole("button", { name: "Confirm reviewed information" }));
+  submitReview(full);
   assert.equal(saved?.email, "john@example.com");
   full.unmount();
   const corrected = validateReviewDraft(createReviewDraft(emptyCard()));

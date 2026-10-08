@@ -133,7 +133,7 @@ test("cleanup failure is explicit; ambiguous committed inserts retain their imag
   assert.equal(failedCleanup.images.size, 1);
   const committed = fixture();
   const insert = committed.store.insert;
-  committed.store.insert = async card => { await insert(card); throw new Error("response lost after commit"); };
+  committed.store.insert = async (card, images) => { await insert(card, images); throw new Error("response lost after commit"); };
   const saved = await createSaveCardHandler(async () => ({ userId, store: committed.store }))(request());
   assert.equal(saved.status, 201);
   assert.equal(committed.images.size, 1);

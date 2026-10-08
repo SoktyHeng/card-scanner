@@ -1,8 +1,9 @@
 import "server-only";
 import { z } from "zod";
-import { cardOutputSchema } from "./card-schema";
+import { cardOutputSchema, twoSideOutputSchema } from "./card-schema";
 import { ExtractionError } from "./errors";
-import { CARD_EXTRACTION_PROMPT } from "./prompts";
+import { CARD_EXTRACTION_PROMPT, TWO_SIDE_PROMPT } from "./prompts";
+import { chatImageContent } from "./provider-images";
 import type { CardExtractor, ExtractionImage } from "./types";
 
 const completionSchema = z.object({
@@ -25,7 +26,7 @@ export class NvidiaCardExtractor implements CardExtractor {
     private readonly request: typeof fetch = fetch,
   ) {}
 
-  async extract(image: ExtractionImage, signal: AbortSignal): Promise<unknown> {
+  async extract(image: ExtractionImage, signal: AbortSignal, back?: ExtractionImage): Promise<unknown> {
     const startedAt = Date.now();
     let stage: "request" | "response_body" | "validation" = "request";
     try {
@@ -53,22 +54,11 @@ export class NvidiaCardExtractor implements CardExtractor {
             messages: [
               {
                 role: "system",
-                content: `${CARD_EXTRACTION_PROMPT}\nJSON schema: ${JSON.stringify(z.toJSONSchema(cardOutputSchema, { target: "draft-7" }))}`,
+                content: `${back ? TWO_SIDE_PROMPT : CARD_EXTRACTION_PROMPT}\nJSON schema: ${JSON.stringify(z.toJSONSchema(back ? twoSideOutputSchema : cardOutputSchema, { target: "draft-7" }))}`,
               },
               {
                 role: "user",
-                content: [
-                  {
-                    type: "text",
-                    text: "Extract only the information visible on this card.",
-                  },
-                  {
-                    type: "image_url",
-                    image_url: {
-                      url: `data:${image.mimeType};base64,${Buffer.from(image.bytes).toString("base64")}`,
-                    },
-                  },
-                ],
+                content: chatImageContent(image, back),
               },
             ],
             response_format: { type: "json_object" },

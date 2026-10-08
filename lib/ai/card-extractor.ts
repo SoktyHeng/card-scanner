@@ -1,5 +1,6 @@
 import "server-only";
-import { extractedCardSchema } from "./card-schema";
+import { extractedCardSchema, twoSideCardSchema } from "./card-schema";
+import { combineCardSides } from "./card-sides";
 import { getAiEnv } from "./env";
 import { ExtractionError } from "./errors";
 import { OpenAiCardExtractor } from "./openai-card-extractor";
@@ -24,10 +25,16 @@ export async function extractCard(
   image: ExtractionImage,
   signal: AbortSignal,
   provider: CardExtractor = createCardExtractor(),
+  back?: ExtractionImage,
 ): Promise<ExtractedCard> {
-  const result = extractedCardSchema.safeParse(
-    await provider.extract(image, signal),
-  );
+  const output = await provider.extract(image, signal, back);
+  if (back) {
+    const sides = twoSideCardSchema.safeParse(output);
+    if (!sides.success) throw new ExtractionError("EXTRACTION_FAILED");
+    try { return combineCardSides(sides.data); }
+    catch { throw new ExtractionError("EXTRACTION_FAILED"); }
+  }
+  const result = extractedCardSchema.safeParse(output);
   if (!result.success) throw new ExtractionError("EXTRACTION_FAILED");
   return result.data;
 }

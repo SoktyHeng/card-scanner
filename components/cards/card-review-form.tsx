@@ -14,13 +14,16 @@ import { hasFieldValue } from "@/lib/cards/field-value";
 import { ConfidenceBadge } from "./confidence-badge";
 import { ExtraFieldsEditor } from "./extra-fields-editor";
 
-export function CardReviewForm({ extraction, initialData, rawText, editing = false, confirmed, disabled = false, onConfirm, onChange }: {
+export function CardReviewForm({ extraction, initialData, rawText, editing = false, disabled = false, loading = false, submitDisabled = false, submitRef, onConfirm, onChange }: {
   extraction?: ExtractedCard;
   initialData?: ReviewedCard;
   editing?: boolean;
   rawText?: string | null;
-  confirmed: boolean;
+  confirmed?: boolean;
   disabled?: boolean;
+  loading?: boolean;
+  submitDisabled?: boolean;
+  submitRef?: React.RefObject<HTMLButtonElement | null>;
   onConfirm: (data: ReviewedCard) => void;
   onChange: () => void;
 }) {
@@ -38,9 +41,16 @@ export function CardReviewForm({ extraction, initialData, rawText, editing = fal
   const nextId = useRef(0);
   const heading = useRef<HTMLHeadingElement>(null);
   const alert = useRef<HTMLDivElement>(null);
+  const saveDialog = useRef<HTMLDialogElement>(null);
+  const localSubmitRef = useRef<HTMLButtonElement>(null);
+  const saveTrigger = submitRef ?? localSubmitRef;
+  const pendingReview = useRef<ReviewedCard | null>(null);
+  const restoreSaveFocus = useRef(true);
   useEffect(() => { heading.current?.focus(); }, []);
 
   function change(next: ReviewDraft) {
+    pendingReview.current = null;
+    if (saveDialog.current?.open) saveDialog.current.close();
     setDraft(next);
     setErrors({});
     setMessage(null);
@@ -51,6 +61,7 @@ export function CardReviewForm({ extraction, initialData, rawText, editing = fal
   }
   function confirm(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (disabled || submitDisabled || saveDialog.current?.open) return;
     const result = validateReviewDraft(draft);
     if (!result.success) {
       const nextErrors: Record<string, string> = {};
@@ -65,7 +76,12 @@ export function CardReviewForm({ extraction, initialData, rawText, editing = fal
     }
     setErrors({});
     setMessage(null);
-    onConfirm(result.data);
+    if (editing) onConfirm(result.data);
+    else {
+      pendingReview.current = result.data;
+      restoreSaveFocus.current = true;
+      saveDialog.current?.showModal();
+    }
   }
   const empty = !reviewFieldOrder.some(key => hasFieldValue(draft.fields[key])) && !draft.extraFields.some(field => hasFieldValue(field.value));
   const sourceText = rawText ?? extraction?.rawText;
@@ -94,7 +110,7 @@ export function CardReviewForm({ extraction, initialData, rawText, editing = fal
     <p className="text-sm text-muted-foreground">Compare each value with the image above. Correct mistakes or leave missing information blank.</p>
     {empty && <p role="status" className="rounded-lg border p-3 text-sm">{editing ? "This card has no populated fields." : "No readable fields were found."} Use Add field to enter information manually.</p>}
     {extraction?.overallConfidence != null && <div className="space-y-1">
-      <p className="text-sm">Original extraction overall confidence</p>
+      <p className="text-sm">{extraction.sourceSides ? "Lowest side extraction confidence" : "Original extraction overall confidence"}</p>
       <ConfidenceBadge score={extraction?.overallConfidence} />
       <p className="text-xs text-muted-foreground">AI scores describe extracted values. Edited and manually added values have no AI score.</p>
     </div>}
@@ -150,12 +166,27 @@ export function CardReviewForm({ extraction, initialData, rawText, editing = fal
           </div>
           <Button id={`${prefix}-add`} type="button" variant="outline" onClick={addField} disabled={fieldToAdd === "custom" && draft.extraFields.length >= 100}>Add field</Button>
         </div>
-        <Button type="submit" className="w-full sm:w-auto">{editing ? "Save changes" : "Confirm reviewed information"}</Button>
+        <Button ref={saveTrigger} type="submit" className="w-full sm:w-auto" disabled={submitDisabled} loading={loading || (editing && disabled)}>{editing ? disabled ? "Saving changes…" : "Save changes" : loading ? "Saving card…" : "Save card"}</Button>
       </fieldset>
     </form>
-    {!disabled && !editing && <p role="status" aria-live="polite" aria-atomic="true" className="rounded-lg border p-3 text-sm">
-      {confirmed ? "Review confirmed. Nothing has been saved. You can keep editing; changes require confirmation again." : "Nothing has been saved. Confirm after checking all values, including low-confidence and unknown fields."}
+    {!disabled && !editing && <p className="rounded-lg border p-3 text-sm">
+      Nothing has been saved. Check the values, then choose Save card.
     </p>}
+    {!editing && <dialog ref={saveDialog} aria-labelledby={`${prefix}-save-title`} aria-describedby={`${prefix}-save-description`} onClose={() => { pendingReview.current = null; if (restoreSaveFocus.current) saveTrigger.current?.focus(); }} className="m-auto w-[calc(100%-2rem)] max-w-md rounded-xl border bg-background p-6 text-foreground backdrop:bg-black/50">
+      <h2 id={`${prefix}-save-title`} className="text-xl font-semibold">Save this card?</h2>
+      <p id={`${prefix}-save-description`} className="my-4 text-sm leading-relaxed">Confirm that you have checked the information. The card and original image will be saved to your private collection.</p>
+      <div className="flex flex-col gap-3 sm:flex-row">
+        <Button type="button" autoFocus variant="outline" onClick={() => { pendingReview.current = null; saveDialog.current?.close(); }}>Cancel</Button>
+        <Button type="button" onClick={() => {
+          const data = pendingReview.current;
+          if (!data || disabled || submitDisabled) return;
+          pendingReview.current = null;
+          restoreSaveFocus.current = false;
+          saveDialog.current?.close();
+          onConfirm(data);
+        }}>Confirm</Button>
+      </div>
+    </dialog>}
     {hasFieldValue(sourceText) && <details className="rounded-lg border p-3">
       <summary className="cursor-pointer rounded focus-visible:outline-2">Original source text</summary>
       <p className="mt-3 whitespace-pre-wrap break-words text-sm" dir="auto">{sourceText}</p>

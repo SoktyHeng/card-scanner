@@ -1,8 +1,9 @@
 import "server-only";
 import { z } from "zod";
-import { cardOutputSchema } from "./card-schema";
+import { cardOutputSchema, twoSideOutputSchema } from "./card-schema";
 import { ExtractionError } from "./errors";
-import { CARD_EXTRACTION_PROMPT } from "./prompts";
+import { CARD_EXTRACTION_PROMPT, TWO_SIDE_PROMPT } from "./prompts";
+import { chatImageContent } from "./provider-images";
 import type { CardExtractor, ExtractionImage } from "./types";
 
 const completionSchema = z.object({
@@ -21,7 +22,7 @@ export class MoonshotCardExtractor implements CardExtractor {
     private readonly request: typeof fetch = fetch,
   ) {}
 
-  async extract(image: ExtractionImage, signal: AbortSignal): Promise<unknown> {
+  async extract(image: ExtractionImage, signal: AbortSignal, back?: ExtractionImage): Promise<unknown> {
     try {
       const response = await this.request("https://api.moonshot.ai/v1/chat/completions", {
         method: "POST",
@@ -35,20 +36,15 @@ export class MoonshotCardExtractor implements CardExtractor {
           model: this.config.model,
           reasoning_effort: "low",
           messages: [
-            { role: "system", content: CARD_EXTRACTION_PROMPT },
-            { role: "user", content: [
-              { type: "text", text: "Extract only the information visible on this card." },
-              { type: "image_url", image_url: {
-                url: `data:${image.mimeType};base64,${Buffer.from(image.bytes).toString("base64")}`,
-              } },
-            ] },
+            { role: "system", content: back ? TWO_SIDE_PROMPT : CARD_EXTRACTION_PROMPT },
+            { role: "user", content: chatImageContent(image, back)  },
           ],
           response_format: {
             type: "json_schema",
             json_schema: {
               name: "card_extraction",
               strict: true,
-              schema: z.toJSONSchema(cardOutputSchema, { target: "draft-7" }),
+              schema: z.toJSONSchema(back ? twoSideOutputSchema : cardOutputSchema, { target: "draft-7" }),
             },
           },
         }),

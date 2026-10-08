@@ -52,7 +52,7 @@ export default async function DashboardPage() {
   ];
   return (
     <div className="space-y-8">
-      <div>
+      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div>
         <p className="mb-2 text-sm font-medium text-primary">YOUR WORKSPACE</p>
         <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
           Dashboard
@@ -60,14 +60,13 @@ export default async function DashboardPage() {
         <p className="mt-3 text-muted-foreground">
           A simple home for your card collection.
         </p>
-      </div>
+      </div><Button asChild className="w-full sm:w-auto"><Link href="/scan">Scan a card</Link></Button></div>
       {failed && (
         <div
           role="alert"
           className="rounded-xl border border-destructive/30 bg-card p-4 text-sm"
         >
-          Unable to load your cards. Please try again. If this is a new
-          installation, complete the database setup first.
+          Unable to load your cards. Reload this page to try again.
         </div>
       )}
       <div className="grid gap-4 sm:grid-cols-3">
@@ -141,9 +140,6 @@ export default async function DashboardPage() {
           )}
         </CardContent>
       </Card>
-      <Button asChild>
-        <Link href="/scan">Scan a card</Link>
-      </Button>
     </div>
   );
 }

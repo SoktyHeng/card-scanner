@@ -48,6 +48,7 @@ test("foundation migration enforces database and storage ownership", async () =>
       userB,
     ]);
     await db.exec("set role anon");
+    await assert.rejects(db.query("select * from public.card_images"), /permission denied/);
     await assert.rejects(
       db.query("select * from public.cards"),
       /permission denied/,
@@ -73,6 +74,26 @@ test("foundation migration enforces database and storage ownership", async () =>
       "insert into public.cards(id, user_id, extra_fields, original_image_path) values ($1, $2, $3, $4)",
       [cardId, userA, JSON.stringify(extra), path],
     );
+    await db.query("insert into public.card_images(card_id, side, storage_path) values ($1, 'front', $2), ($1, 'back', $3)", [cardId, path, `${userA}/${cardId}/back.png`]);
+    assert.equal((await db.query("select * from public.card_images")).rows.length, 2);
+    await assert.rejects(db.query("update public.card_images set card_id = $1", [cardId]), /permission denied/);
+    await db.query("select set_config('request.jwt.claim.sub', $1, false)", [userB]);
+    assert.equal((await db.query("select * from public.card_images")).rows.length, 0);
+    assert.equal((await db.query("delete from public.card_images returning id")).rows.length, 0);
+    await assert.rejects(db.query("insert into public.card_images(card_id, side, storage_path) values ($1, 'front', $2)", [cardId, `${userB}/${cardId}/front.png`]), /row-level security/);
+    await db.query("select set_config('request.jwt.claim.sub', $1, false)", [userA]);
+    const transactionalId = "00000000-0000-4000-8000-000000000010";
+    const transactionalPath = `${userA}/${transactionalId}/original.png`;
+    const rpcCard = { id: transactionalId, user_id: userA, original_image_path: transactionalPath };
+    await assert.rejects(db.query("select public.save_card_with_images($1, $2)", [JSON.stringify(rpcCard), JSON.stringify([{ side: "front", storage_path: transactionalPath }, { side: "back", storage_path: `${userB}/${transactionalId}/back.png` }])]), /row-level security/);
+    assert.equal((await db.query("select id from public.cards where id = $1", [transactionalId])).rows.length, 0);
+    await db.query("select public.save_card_with_images($1, $2)", [JSON.stringify(rpcCard), JSON.stringify([{ side: "front", storage_path: transactionalPath }, { side: "back", storage_path: `${userA}/${transactionalId}/back.png` }])]);
+    assert.equal((await db.query("select * from public.card_images where card_id = $1", [transactionalId])).rows.length, 2);
+    await db.query("delete from public.cards where id = $1", [transactionalId]);
+    assert.equal((await db.query("select * from public.card_images where card_id = $1", [transactionalId])).rows.length, 0);
+    await db.query("select public.save_card_with_images($1, $2)", [JSON.stringify(rpcCard), JSON.stringify([{ side: "front", storage_path: transactionalPath }])]);
+    assert.equal((await db.query("select * from public.card_images where card_id = $1", [transactionalId])).rows.length, 1);
+    await db.query("delete from public.cards where id = $1", [transactionalId]);
     assert.deepEqual(
       (
         await db.query<{ extra_fields: unknown }>(

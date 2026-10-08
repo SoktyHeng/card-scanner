@@ -18,6 +18,34 @@ const row: CardRow = {
   ai_confidence: 0.8, scan_status: "completed", original_image_path: path,
   is_archived: false, created_at: "2026-10-07T00:00:00Z", updated_at: "2026-10-07T00:00:00Z",
 };
+
+test("two-sided deletion retains the archived card after back cleanup failure and safely retries both paths", async () => {
+  const back = `${owner}/${id}/back.png`;
+  const objects = new Set([path, back]);
+  let failBack = true, deleted = false;
+  const supabase = client(async (input, init) => {
+    const url = urlOf(input);
+    if (url.pathname === "/rest/v1/card_images") {
+      assert.equal(url.searchParams.get("card_id"), `eq.${id}`);
+      return Response.json([{ side: "front", storage_path: path }, { side: "back", storage_path: back }]);
+    }
+    if (url.pathname === "/rest/v1/cards") {
+      owned(url, init);
+      if (init?.method === "PATCH") return Response.json([{ original_image_path: path, updated_at: row.updated_at }]);
+      deleted = true; return Response.json([{ id }]);
+    }
+    if (url.pathname.includes("/list/")) return Response.json([]);
+    const target = JSON.parse(String(init?.body)).prefixes[0] as string;
+    assert.ok([path, back].includes(target));
+    if (target === back && failBack) return Response.json({ message: "failure" }, { status: 503 });
+    return Response.json(objects.delete(target) ? [{ name: target }] : []);
+  });
+  await assert.rejects(permanentlyDeleteCard(supabase, owner, id), /Unable to remove/);
+  assert.equal(deleted, false); assert.deepEqual([...objects], [back]);
+  failBack = false;
+  await permanentlyDeleteCard(supabase, owner, id);
+  assert.equal(objects.size, 0); assert.equal(deleted, true);
+});
 function client(request: typeof fetch) {
   return createClient<Database>("https://example.supabase.co", "public-test-key", {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -39,7 +67,8 @@ test("editing validates corrected data, uses the saved version, and cannot alter
   const snapshot = structuredClone(row);
   let calls = 0;
   const supabase = client(async (input, init) => {
-    calls++; const url = urlOf(input); owned(url, init);
+    calls++; const url = urlOf(input);
+    if (url.pathname === "/rest/v1/card_images") { assert.equal(url.searchParams.get("card_id"), `eq.${id}`); return Response.json([]); } owned(url, init);
     assert.equal(init?.method, "PATCH");
     assert.equal(url.searchParams.get("updated_at"), `eq.${row.updated_at}`);
     const body = JSON.parse(String(init?.body));
@@ -81,6 +110,7 @@ test("permanent deletion archives, removes only the original private image, then
   const operations: string[] = [];
   const supabase = client(async (input, init) => {
     const url = urlOf(input);
+    if (url.pathname === "/rest/v1/card_images") { assert.equal(url.searchParams.get("card_id"), `eq.${id}`); return Response.json([]); }
     if (url.pathname.startsWith("/rest/")) {
       owned(url, init); operations.push(init?.method ?? "GET");
       if (init?.method === "PATCH") {
@@ -102,6 +132,7 @@ test("image cleanup failure and invalid image ownership retain the archived reco
     let deleted = false;
     const supabase = client(async (input, init) => {
       const url = urlOf(input);
+    if (url.pathname === "/rest/v1/card_images") { assert.equal(url.searchParams.get("card_id"), `eq.${id}`); return Response.json([]); }
       if (url.pathname.startsWith("/rest/")) {
         owned(url, init);
         if (init?.method === "DELETE") deleted = true;
@@ -119,6 +150,7 @@ test("database failure after image removal reports partial deletion; missing ima
     let checked = false;
     const supabase = client(async (input, init) => {
       const url = urlOf(input);
+    if (url.pathname === "/rest/v1/card_images") { assert.equal(url.searchParams.get("card_id"), `eq.${id}`); return Response.json([]); }
       if (url.pathname.startsWith("/rest/")) {
         owned(url, init);
         if (init?.method === "PATCH") return Response.json([{ original_image_path: path, updated_at: row.updated_at }]);
@@ -136,6 +168,7 @@ test("empty cleanup response cannot delete a record if storage still contains it
   let deleted = false;
   const supabase = client(async (input, init) => {
     const url = urlOf(input);
+    if (url.pathname === "/rest/v1/card_images") { assert.equal(url.searchParams.get("card_id"), `eq.${id}`); return Response.json([]); }
     if (url.pathname.startsWith("/rest/")) {
       if (init?.method === "DELETE") deleted = true;
       return Response.json([{ original_image_path: path, updated_at: row.updated_at }]);
@@ -149,6 +182,7 @@ test("card lists are paginated, filter active/archived, and never query AI sourc
   const filters: string[] = [];
   const supabase = client(async input => {
     const url = urlOf(input);
+    if (url.pathname === "/rest/v1/card_images") { assert.equal(url.searchParams.get("card_id"), `eq.${id}`); return Response.json([]); }
     assert.equal(url.searchParams.get("user_id"), `eq.${owner}`);
     assert.equal(url.searchParams.get("offset"), "24");
     assert.equal(url.searchParams.get("limit"), "25");

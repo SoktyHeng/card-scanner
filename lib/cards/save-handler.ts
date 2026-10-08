@@ -6,7 +6,7 @@ import { DuplicateWarningError, SaveError, saveReviewedCard, type SaveContext } 
 import { isSameOriginRequest } from "@/lib/auth/request-origin";
 
 export const MAX_SAVE_DATA_BYTES = 3 * 1024 * 1024;
-export const MAX_SAVE_BODY_BYTES = MAX_IMAGE_BYTES + MAX_SAVE_DATA_BYTES + 64 * 1024;
+export const MAX_SAVE_BODY_BYTES = 2 * MAX_IMAGE_BYTES + MAX_SAVE_DATA_BYTES + 64 * 1024;
 export function createSaveCardHandler(authenticate: () => Promise<SaveContext | null>) {
   return async (request: Request): Promise<Response> => {
     try {
@@ -17,7 +17,7 @@ export function createSaveCardHandler(authenticate: () => Promise<SaveContext | 
       let form: FormData;
       try { form = await readBoundedMultipart(request, MAX_SAVE_BODY_BYTES); }
       catch { throw new SaveError("INVALID_SAVE"); }
-      if ([...form.keys()].some(key => key !== "image" && key !== "data") || form.getAll("image").length !== 1 || form.getAll("data").length !== 1)
+      if ([...form.keys()].some(key => key !== "image" && key !== "backImage" && key !== "data") || form.getAll("image").length !== 1 || form.getAll("backImage").length > 1 || form.getAll("data").length !== 1)
         throw new SaveError("INVALID_SAVE");
       const file = form.get("image"), json = form.get("data");
       if (!(file instanceof File) || typeof json !== "string" || Buffer.byteLength(json) > MAX_SAVE_DATA_BYTES)
@@ -27,7 +27,11 @@ export function createSaveCardHandler(authenticate: () => Promise<SaveContext | 
       const parsed = saveCardSchema.safeParse(input);
       if (!parsed.success) throw new SaveError("INVALID_SAVE");
       const image = await validateOriginalImage(file).catch(() => { throw new SaveError("INVALID_IMAGE"); });
-      const id = await saveReviewedCard(context, parsed.data, image);
+      const backFile = form.get("backImage");
+      if (backFile !== null && !(backFile instanceof File)) throw new SaveError("INVALID_IMAGE");
+      const back = backFile instanceof File ? await validateOriginalImage(backFile).catch(() => { throw new SaveError("INVALID_IMAGE"); }) : undefined;
+      if (!!parsed.data.aiExtraction.sourceSides !== !!back) throw new SaveError("INVALID_SAVE");
+      const id = await saveReviewedCard(context, parsed.data, image, back);
       return Response.json({ success: true, id }, { status: 201, headers: { "Cache-Control": "private, no-store" } });
     } catch (error: unknown) {
       if (error instanceof DuplicateWarningError) return Response.json({ success: false,

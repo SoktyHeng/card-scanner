@@ -8,11 +8,14 @@ import { ImagePreview } from "@/components/scanner/image-preview";
 import { useCardScanner } from "@/components/scanner/use-card-scanner";
 import { CardReviewForm } from "@/components/cards/card-review-form";
 import { redirect } from "next/navigation";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { DuplicateWarning } from "@/components/cards/duplicate-warning";
+import { ScanSteps } from "./scan-steps";
 
 export function CardScanner() {
-  const { state, result, reviewedScan, duplicateWarning, cancelDuplicateSave, confirmReview, invalidateReview, selectImage, removeImage, extract, save } = useCardScanner();
+  const { state, backImage, result, reviewedScan, duplicateWarning, cancelDuplicateSave, invalidateReview, selectImage, removeImage, extract, save } = useCardScanner();
+  const [side, setSide] = useState<"front" | "back">("front");
+  const preview = side === "front" ? state.image : backImage;
   const saveButton = useRef<HTMLButtonElement>(null);
   if (state.status === "completed") redirect(`/cards/${state.cardId}`);
   const extracting = state.status === "extracting";
@@ -25,37 +28,45 @@ export function CardScanner() {
     : busy
       ? "Checking image…"
       : state.status === "reviewed"
-        ? "Review confirmed"
+        ? "Ready to save"
         : state.status === "review"
           ? "Ready for review"
       : state.image
         ? "Image selected"
-        : "No image selected";
+        : backImage ? "Add a front image to continue" : "No image selected";
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Select a card image</CardTitle>
+        <CardTitle>{result ? "Check card information" : state.image ? "Check your image" : "Select a card image"}</CardTitle>
         <p id="scan-file-help" className="text-sm text-muted-foreground">
           JPG, JPEG, PNG, or WEBP. Maximum 10 MB.
         </p>
       </CardHeader>
       <CardContent className="space-y-6">
+        <ScanSteps current={reviewedScan || saving || duplicateWarning ? 4 : result ? 3 : extracting ? 2 : state.image ? 1 : 0} />
+        <div className="grid grid-cols-2 gap-3" role="group" aria-label="Card side">
+          <Button type="button" variant={side === "front" ? "default" : "outline"} aria-pressed={side === "front"} onClick={() => setSide("front")}>Front (required)</Button>
+          <Button type="button" variant={side === "back" ? "default" : "outline"} aria-pressed={side === "back"} onClick={() => setSide("back")}>Back (optional)</Button>
+        </div>
+        <p className="text-sm text-muted-foreground">Add the front of your card. Add the back if it has more information. Both sides will be read together.</p>
         <div
           className="flex flex-col gap-3 sm:flex-row"
           aria-describedby="scan-file-help"
         >
           <ImagePicker
             mode="camera"
-            hasImage={!!state.image}
+            hasImage={!!preview}
+            side={side === "back" ? "back" : undefined}
             disabled={busy}
-            onSelect={selectImage}
+            onSelect={file => { void selectImage(file, side); }}
           />
           <ImagePicker
             mode="upload"
-            hasImage={!!state.image}
+            hasImage={!!preview}
+            side={side === "back" ? "back" : undefined}
             disabled={busy}
-            onSelect={selectImage}
+            onSelect={file => { void selectImage(file, side); }}
           />
         </div>
         <p className="text-sm text-muted-foreground">
@@ -79,15 +90,16 @@ export function CardScanner() {
           {status}
         </div>
         <div aria-busy={busy}>
-          {state.image ? (
-            <ImagePreview image={state.image} />
+          <p className="mb-3 text-sm font-semibold">{side === "front" ? "Front preview" : "Back preview"}</p>
+          {preview ? (
+            <ImagePreview image={preview} />
           ) : (
             <div className="flex min-h-52 flex-col items-center justify-center gap-3 rounded-xl border border-dashed bg-muted/30 px-5 text-center sm:min-h-72">
               <ImageIcon
                 className="size-9 text-muted-foreground"
                 aria-hidden="true"
               />
-              <p className="font-medium">Your image preview will appear here</p>
+              <p className="font-medium">Your {side} image preview will appear here</p>
               <p className="max-w-sm text-sm text-muted-foreground">
                 Keep the whole card in frame, use good lighting, and make sure
                 the text is sharp.
@@ -108,17 +120,19 @@ export function CardScanner() {
             type="button"
             variant="outline"
             className="w-full sm:w-auto"
-            disabled={saveLocked || (!state.image && !busy)}
-            onClick={removeImage}
+            disabled={saveLocked || (!preview && !busy)}
+            onClick={() => removeImage(side)}
           >
             {extracting
               ? "Cancel extraction and remove image"
               : busy && !state.image
                 ? "Cancel selection"
-                : "Remove image"}
+                : side === "back" ? "Remove back image" : "Remove image"}
           </Button>
           <Button
             type="button"
+            variant={result ? "outline" : "default"}
+            loading={extracting}
             className="w-full sm:w-auto"
             disabled={!state.image || busy}
             onClick={extract}
@@ -133,15 +147,11 @@ export function CardScanner() {
           </Button>
         </div>
         <p className="text-sm text-muted-foreground">
-          Clicking Extract sends this image to the AI provider for analysis.
-          Extraction does not save the card. Review the results, then choose Save card.
-          Large photos are resized for analysis; the original image stays available for review.
+          Extract sends your image to the AI provider to read the card. Check every value before saving.
+          Your original image stays with your review.
         </p>
-        {result && <CardReviewForm extraction={result} confirmed={reviewedScan !== null} disabled={busy} onConfirm={confirmReview} onChange={invalidateReview} />}
-        {reviewedScan && !duplicateWarning && <div className="space-y-3 border-t pt-5">
-          <p className="text-sm">Your review is confirmed. Save the original image and corrected card information to your private collection.</p>
-          <Button ref={saveButton} type="button" className="w-full sm:w-auto" disabled={busy} onClick={() => { void save(); }}>{saving ? "Saving card…" : state.status === "save_error" ? "Retry saving card" : "Save card"}</Button>
-        </div>}
+        {(result?.hasSideConflicts || result?.conflictingFields?.length) ? <p role="alert" className="rounded-lg border border-amber-500 bg-amber-50/50 p-3 text-sm dark:bg-amber-950/20">Some fields differ between the front and back. Both values are kept in Additional fields with side labels. Check them before saving.</p> : null}
+        {result && <CardReviewForm extraction={result} disabled={busy} loading={saving} submitDisabled={!!duplicateWarning} submitRef={saveButton} onConfirm={data => { void save(false, data); }} onChange={invalidateReview} />}
         {duplicateWarning && <DuplicateWarning warning={duplicateWarning} disabled={busy} onSaveAnyway={() => { void save(true); }} onCancel={() => { cancelDuplicateSave(); queueMicrotask(() => saveButton.current?.focus()); }} />}
         {(state.status === "save_error" || state.status === "extraction_error") && state.message.includes("session has expired") && <a className="inline-block rounded py-3 underline focus-visible:outline-2" href="/login?next=%2Fscan" target="_blank" rel="noopener noreferrer">Sign in in a new tab to keep your draft</a>}
       </CardContent>

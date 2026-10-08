@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 import { cardMutationSchema, correctedColumns, ownsImagePath } from "./management-schema";
 import type { z } from "zod";
+import { loadCardImagePaths } from "./image-paths";
 
 export class ManagementError extends Error {
   constructor(readonly status: number, readonly code: string, message: string) { super(message); }
@@ -31,9 +32,12 @@ export async function permanentlyDeleteCard(supabase: SupabaseClient<Database>, 
     .select("original_image_path,updated_at").maybeSingle();
   if (archived.error) throw failed();
   if (!archived.data) throw missing();
-  const path = archived.data.original_image_path;
-  if (path) {
-    if (!ownsImagePath(userId, id, path)) throw new ManagementError(409, "INVALID_IMAGE_PATH", "The card is archived. Its image path could not be verified; deletion was stopped.");
+  const legacyPath = archived.data.original_image_path;
+  if (legacyPath && !ownsImagePath(userId, id, legacyPath)) throw new ManagementError(409, "INVALID_IMAGE_PATH", "The card is archived. Its image path could not be verified; deletion was stopped.");
+  let paths: string[];
+  try { ({ paths } = await loadCardImagePaths(supabase, userId, id, legacyPath)); }
+  catch { throw new ManagementError(503, "IMAGE_DELETE_FAILED", "The card is archived. Its image paths could not be verified; deletion was stopped."); }
+  for (const path of paths) {
     const removed = await supabase.storage.from("card-images").remove([path]);
     if (removed.error) throw new ManagementError(503, "IMAGE_DELETE_FAILED", "The card is archived. Unable to remove its image; retry permanent deletion.");
     // Storage removal is idempotent, but an empty response must be distinguished

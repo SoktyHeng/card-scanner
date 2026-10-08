@@ -1,8 +1,9 @@
 import "server-only";
 import { z } from "zod";
-import { cardOutputSchema } from "./card-schema";
+import { cardOutputSchema, twoSideOutputSchema } from "./card-schema";
 import { ExtractionError } from "./errors";
-import { CARD_EXTRACTION_PROMPT } from "./prompts";
+import { CARD_EXTRACTION_PROMPT, TWO_SIDE_PROMPT } from "./prompts";
+import { responseImageContent } from "./provider-images";
 import type { CardExtractor, ExtractionImage } from "./types";
 
 const responseSchema = z.object({
@@ -23,7 +24,7 @@ export class OpenAiCardExtractor implements CardExtractor {
     private readonly request: typeof fetch = fetch,
   ) {}
 
-  async extract(image: ExtractionImage, signal: AbortSignal): Promise<unknown> {
+  async extract(image: ExtractionImage, signal: AbortSignal, back?: ExtractionImage): Promise<unknown> {
     let response: Response;
     try {
       response = await this.request("https://api.openai.com/v1/responses", {
@@ -39,20 +40,10 @@ export class OpenAiCardExtractor implements CardExtractor {
           store: false,
           max_output_tokens: 8000,
           input: [
-            { role: "system", content: CARD_EXTRACTION_PROMPT },
+            { role: "system", content: back ? TWO_SIDE_PROMPT : CARD_EXTRACTION_PROMPT },
             {
               role: "user",
-              content: [
-                {
-                  type: "input_text",
-                  text: "Extract only the information visible on this card.",
-                },
-                {
-                  type: "input_image",
-                  detail: "high",
-                  image_url: `data:${image.mimeType};base64,${Buffer.from(image.bytes).toString("base64")}`,
-                },
-              ],
+              content: responseImageContent(image, back),
             },
           ],
           text: {
@@ -60,7 +51,7 @@ export class OpenAiCardExtractor implements CardExtractor {
               type: "json_schema",
               name: "card_extraction",
               strict: true,
-              schema: z.toJSONSchema(cardOutputSchema, { target: "draft-7" }),
+              schema: z.toJSONSchema(back ? twoSideOutputSchema : cardOutputSchema, { target: "draft-7" }),
             },
           },
         }),

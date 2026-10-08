@@ -1,9 +1,8 @@
-# Card Scanner — Phases 1–5
+# Card Scanner
 
-Next.js 16 App Router, strict TypeScript, Tailwind 4, shadcn/ui, Supabase
-authentication, a dashboard, camera/upload preview, authenticated AI extraction,
-an editable review screen, and private reviewed-card saving. Card management
-remains for later phases.
+Next.js 16 App Router, strict TypeScript, Tailwind 4, shadcn/ui and Supabase.
+Authentication, front/back capture and upload, AI extraction, mandatory review,
+private image storage, card management, keyword search and duplicate detection.
 
 ## Install and configure
 
@@ -276,9 +275,9 @@ platform's request limit to support the route duration; a platform hard limit
 can still terminate the request sooner. Timeouts remain bounded and can be
 retried manually.
 
-`POST /api/cards/extract` accepts multipart form data with exactly one `image`
-file. It verifies the cookie session using Supabase `getUser()` before reading
-the body, rejects foreign browser origins, bounds the streamed body (10 MB plus
+`POST /api/cards/extract` accepts multipart form data with exactly one front `image`
+file and an optional `backImage`. It verifies the cookie session using Supabase `getUser()` before reading
+the body, rejects foreign browser origins, bounds the streamed body (20 MB plus
 64 KB multipart overhead), checks signatures and file size, and fully decodes
 with Sharp. It accepts original JPG/JPEG, PNG, or WEBP content even if browser
 MIME is wrong. Empty, corrupt, animated/multipage, unsupported, over-10-MB, or
@@ -379,12 +378,14 @@ format, value lengths, extra-field arrays/keys, and confidence bounds are valida
 Blank custom values require correction or removal. Khmer labels and values are
 preserved; keys are generated internally with a safe fallback for non-Latin labels.
 
-The explicit **Confirm reviewed information** action validates the draft and
-prepares `ReviewedScan` in the scanner hook: original `File`, original raw text,
-a copy of the validated AI extraction, and separate reviewed data. Editing
-invalidates the confirmation. Image replacement/removal, re-extraction, or leaving
-clears the review. The UI makes clear that confirmation has not saved anything.
-Phase 5 can consume this handoff; it must revalidate on the server before saving.
+The single **Save card** action validates the draft and opens a **Save this card?**
+dialog. **Cancel** keeps the draft without making a save request. **Confirm**
+prepares `ReviewedScan` in the scanner hook and starts saving: original `File`,
+original raw text, a copy of the validated AI extraction, and separate reviewed
+data. Editing invalidates this handoff; unchanged retries reuse the submission ID.
+Image replacement/removal, re-extraction, or leaving clears the review. Duplicate
+warnings still pause saving before storage/database writes, and the server
+revalidates all input. Saved-card editing retains its existing Save changes action.
 
 The form uses labeled inputs, grouped fields, associated validation messages,
 live status announcements, keyboard focus on new/converted fields and errors,
@@ -400,9 +401,9 @@ Phase 4 adds no storage/database writes, migrations, or save endpoints.
 
 ## Phase 5 — Save Card
 
-Confirm the review, then choose **Save card**. `/api/cards` authenticates with
+Choose **Save card** after reviewing the fields, then confirm in the dialog. `/api/cards` authenticates with
 Supabase `getUser()` before reading the upload. It bounds the multipart body,
-requires one original image and one JSON payload, validates both corrected and
+requires one original front image, an optional original back image and one JSON payload, validates both corrected and
 original AI data with Zod, and rechecks the image signature, size, format and full
 decode. It accepts no client owner, image path or arbitrary database columns.
 
@@ -693,6 +694,66 @@ Visible inputs stay mounted when cleared; conversion reveals and focuses its
 standard destination. Visibility is separate from the full draft and source data.
 Existing save validation remains unchanged: empty custom fields must receive a
 value or be removed, and validation reveals hidden invalid fields for correction.
+
+## Front/back scanning (2026-10-08)
+
+The front image is required and the back is optional. Front/Back controls have
+separate previews and capture/upload/replace/remove actions. Each original image
+uses the existing 10 MB content and decode validation. Changing either side
+invalidates extraction and review; failed operations retain selected images and
+the corrected draft. Removing one side keeps the other.
+
+Extraction sends both labeled images in one provider request, obtains separately
+validated side outputs and combines them deterministically. Exact agreements are
+kept; differing standard values become labeled front/back additional fields and
+the standard field stays empty for manual correction. Custom values retain side
+labels, and unknown fields keep their unknown label and supplied confidence.
+The original per-side text, AI data and images stay separate from corrected data.
+The displayed overall score for two sides is the lowest supplied side score.
+
+Apply `supabase/migrations/20261008073615_card_front_back_images.sql` before
+deploying this application version. It creates owner-protected `card_images`,
+backfills valid legacy front paths and adds the security-invoker
+`save_card_with_images` RPC. Card and image metadata insert together or roll back
+together; requests use the verified user's Supabase session, not a service role.
+Uploads use `{user_id}/{card_id}/original.{ext}` for the front and `back.{ext}`
+for the back. The private bucket and existing owner-folder policies protect both.
+Known new uploads are cleaned after failed writes; uncertain commits or images
+reused by concurrent retries are preserved and reported rather than destroyed.
+Unchanged retries reuse the same submission ID and never upsert originals.
+
+Details and editing display signed URLs valid for five minutes. With two images,
+the image itself is a keyboard-operable flip button; Show front/Show back controls
+and side announcements are also provided. The inactive face is hidden from screen
+readers, and reduced-motion preferences disable the prolonged transition.
+Single-image cards have no flip controls. Grid links continue to open details.
+Permanent deletion archives first and verifies/removes every known image before
+deleting the card; partial storage failure keeps the archived record for retry.
+
+Tests cover conservative merging, all provider request formats, capture/review,
+front-only and two-image transactional writes, RLS isolation, signed URLs, flip
+controls and storage failure recovery. Hosted migration application, live provider
+accuracy/latency and live two-user checks remain unverified; disposable test-user
+credentials are missing. Physical camera, visual 3D animation, mobile/tablet/
+desktop browser and screen-reader checks remain manual because browser automation
+is unavailable in this environment.
+
+## UI refinements (2026-10-08)
+
+The existing teal theme now has active-section navigation, consistent page
+headings, mobile action layouts and a five-stage scan progress indicator. Search,
+empty collections, duplicate warnings and archive/delete explanations use simple
+wording. Full-card links, hidden empty fields with Add field, review requirements,
+failure recovery and shimmer skeletons remain in place. Skeleton action layouts
+match mobile controls, and reduced-motion preferences disable prolonged animation
+and transitions throughout the interface. No dependencies or database changes were
+added.
+
+Automated checks cover active navigation, scan progress, accessible skeletons and
+the existing review/save/management workflows. Rendered mobile, tablet and desktop
+checks are unverified: browser automation could not start because its local
+app-server executable is missing. A live signed-in workflow and physical camera
+checks also remain manual; automated workflow tests use controlled service adapters.
 
 ## Phase 1 verification snapshot (2026-10-05)
 

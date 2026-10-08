@@ -148,3 +148,18 @@
 @keyframes skeleton-shimmer {
   to { transform: translateX(100%); }
 }
+
+.card-flip { perspective: 1200px; }
+.card-flip-inner { position: relative; width: 100%; height: 100%; transform-style: preserve-3d; transition: transform 450ms ease; }
+.card-flip-back { transform: rotateY(180deg); }
+.card-flip-face { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+.card-flip-reverse { transform: rotateY(180deg); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
