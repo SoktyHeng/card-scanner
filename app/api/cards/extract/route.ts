@@ -15,7 +15,7 @@ export const POST = createExtractionHandler({
         (error.status !== undefined && error.status >= 500))
     )
       throw new Error("Auth unavailable");
-    return !error && !!data.user;
+    return error || !data.user ? null : data.user.id;
   },
   extract: extractCard,
 });

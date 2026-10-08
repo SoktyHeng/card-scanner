@@ -546,6 +546,34 @@ test("save anyway sends explicit acknowledgement and guards repeated submissions
   assert.equal(saves, 3);
 });
 
+test("expired save session keeps reviewed values and original image while sign-in opens another tab", async () => {
+  let saves = 0;
+  mock.method(globalThis, "fetch", async (url: string) => {
+    if (url === "/api/cards/extract") return Response.json({ success: true, data: businessCard() });
+    saves++;
+    return Response.json({ success: false, error: { code: "UNAUTHORIZED", message: "private auth diagnostic" } }, { status: 401 });
+  });
+  const view = render(createElement(CardScanner));
+  const camera = view.getByLabelText("Capture card photo");
+  assert.equal(camera.getAttribute("capture"), "environment");
+  assert.equal(camera.getAttribute("accept"), "image/*");
+  fireEvent.change(camera, { target: { files: [file(png)] } });
+  await view.findByText("card.png");
+  fireEvent.click(view.getByRole("button", { name: "Extract information" }));
+  await view.findByLabelText("Name");
+  fireEvent.change(view.getByLabelText("Name"), { target: { value: "My preserved correction" } });
+  fireEvent.click(view.getByRole("button", { name: "Confirm reviewed information" }));
+  fireEvent.click(view.getByRole("button", { name: "Save card" }));
+  await view.findByRole("alert");
+  assert.match(view.getByRole("alert").textContent!, /session has expired/);
+  assert.equal(view.queryByText("private auth diagnostic"), null);
+  assert.equal((view.getByLabelText("Name") as HTMLInputElement).value, "My preserved correction");
+  assert.ok(view.getByAltText("Selected card image"));
+  assert.equal(view.getByRole("link", { name: /Sign in in a new tab/ }).getAttribute("target"), "_blank");
+  fireEvent.click(view.getByRole("button", { name: "Retry saving card" }));
+  await waitFor(() => assert.equal(saves, 2));
+});
+
 test("provider errors allow manual retry; empty validated results do not fabricate fields", async () => {
   let calls = 0;
   mock.method(globalThis, "fetch", async () => {

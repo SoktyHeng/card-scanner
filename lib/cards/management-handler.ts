@@ -4,6 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 import { cardDeleteSchema, cardMutationSchema } from "./management-schema";
 import { ManagementError, mutateCard, permanentlyDeleteCard } from "./management-service";
+import { isSameOriginRequest } from "@/lib/auth/request-origin";
 
 type Context = { userId: string; supabase: SupabaseClient<Database> };
 function reply(body: unknown, status = 200) {
@@ -12,13 +13,12 @@ function reply(body: unknown, status = 200) {
 export function createManagementHandler(authenticate: () => Promise<Context | null>, deleting = false) {
   return async (request: Request, route: { params: Promise<{ id: string }> }) => {
     try {
+      if (!isSameOriginRequest(request)) throw new ManagementError(403, "FORBIDDEN", "This request could not be verified.");
       const context = await authenticate();
       if (!context) throw new ManagementError(401, "UNAUTHORIZED", "Your session has expired. Sign in again; unsaved changes remain here until you leave.");
-      const origin = request.headers.get("origin");
-      if (origin && origin !== new URL(request.url).origin) throw new ManagementError(403, "FORBIDDEN", "This request could not be verified.");
       const { id } = await route.params;
       if (!z.uuid().safeParse(id).success) throw new ManagementError(404, "NOT_FOUND", "This card was not found.");
-      if (!request.headers.get("content-type")?.startsWith("application/json")) throw new ManagementError(400, "INVALID_REQUEST", "Submit reviewed card data as JSON.");
+      if (request.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase() !== "application/json") throw new ManagementError(400, "INVALID_REQUEST", "Submit reviewed card data as JSON.");
       // Bound actual bytes, including chunked requests, before parsing JSON.
       const reader = request.body?.getReader();
       if (!reader) throw new ManagementError(400, "INVALID_REQUEST", "No card data was submitted.");

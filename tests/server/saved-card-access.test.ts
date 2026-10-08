@@ -105,3 +105,23 @@ test("save adapter uses session-scoped Supabase operations and never upserts the
   assert.equal(await store.remove(path), true);
   assert.deepEqual(operations, ["GET", "POST", "POST", "DELETE"]);
 });
+
+test("save cleanup confirms absence after an empty removal response and keeps uncertain images", async () => {
+  for (const outcome of ["absent", "present", "failed"] as const) {
+    let checked = false;
+    const supabase = client(async (input, init) => {
+      assert.equal(new Headers(init?.headers).get("authorization"), "Bearer owner-session");
+      const url = urlOf(input);
+      if (init?.method === "DELETE") return Response.json([]);
+      checked = true;
+      assert.ok(url.pathname.endsWith("/list/card-images"));
+      const body = JSON.parse(String(init?.body));
+      assert.equal(body.prefix, `${owner}/${id}`);
+      assert.equal(body.search, "original.png");
+      return outcome === "failed" ? Response.json({ message: "private error" }, { status: 503 })
+        : Response.json(outcome === "present" ? [{ name: "original.png" }] : []);
+    });
+    assert.equal(await createCardSaveStore(supabase, owner).remove(path), outcome === "absent");
+    assert.equal(checked, true);
+  }
+});

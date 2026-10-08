@@ -116,6 +116,7 @@ export const extractionMessages = {
   PROVIDER_UNAVAILABLE:
     "AI extraction is temporarily unavailable. Please try again.",
   PROVIDER_RATE_LIMITED: "Extraction is busy. Wait a moment, then try again.",
+  REQUEST_RATE_LIMITED: "Too many extraction requests. Wait a minute, then try again. Your image is still here.",
   PROVIDER_QUOTA_EXCEEDED:
     "The AI provider's API balance or quota is exhausted. The app administrator must check API billing before extraction can continue.",
   EXTRACTION_TIMEOUT: "Extraction took too long. Please try again.",

@@ -5,6 +5,7 @@ import { createElement } from "react";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { CardActionControls } from "../components/cards/card-actions";
 import { CardEditControls } from "../components/cards/card-edit-form";
+import { cardOperation } from "../components/cards/card-operation";
 import { businessCard } from "./fixtures/extraction";
 import { createReviewDraft, validateReviewDraft } from "../lib/cards/review";
 
@@ -85,4 +86,17 @@ test("archive/restore disable duplicate operations and show controlled session o
     assert.equal((button as HTMLButtonElement).disabled, false);
     view.unmount();
   }
+});
+
+test("management errors never display upstream messages, malformed output or network diagnostics", async () => {
+  for (const response of [
+    Response.json({ success: false, error: { code: "OPERATION_FAILED", message: "private card content and secret" } }, { status: 503 }),
+    Response.json({ success: false, error: { code: "unknown", message: "private card content and secret" } }, { status: 503 }),
+    new Response("private stack trace", { status: 500 }),
+  ]) {
+    globalThis.fetch = async (_input, init) => { assert.ok(init?.signal); return response; };
+    await assert.rejects(cardOperation("card", "PATCH", { operation: "archive" }), /Reload to check its status/);
+  }
+  globalThis.fetch = async () => { throw new Error("private network diagnostic"); };
+  await assert.rejects(cardOperation("card", "DELETE", { confirmed: true }), /Reload to check its status/);
 });

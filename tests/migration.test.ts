@@ -30,6 +30,8 @@ test("foundation migration enforces database and storage ownership", async () =>
       alter table storage.objects enable row level security;
       grant usage on schema public, auth, storage to anon, authenticated;
       grant select, insert, update, delete on storage.objects to anon, authenticated;
+      -- Model Supabase's default privileges, including non-RLS TRUNCATE.
+      alter default privileges in schema public grant all on tables to authenticated;
     `);
     for (const file of (await readdir("supabase/migrations"))
       .filter((name) => name.endsWith(".sql"))
@@ -59,6 +61,11 @@ test("foundation migration enforces database and storage ownership", async () =>
       [],
     );
     await db.exec("reset role; set role authenticated");
+    await assert.rejects(db.exec("truncate public.cards"), /permission denied/);
+    for (const privilege of ["TRUNCATE", "TRIGGER", "REFERENCES"]) {
+      const permission = await db.query<{ permitted: boolean }>("select has_table_privilege('authenticated', 'public.cards', $1) as permitted", [privilege]);
+      assert.equal(permission.rows[0].permitted, false);
+    }
     await db.query("select set_config('request.jwt.claim.sub', $1, false)", [
       userA,
     ]);

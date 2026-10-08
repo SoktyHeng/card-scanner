@@ -7,6 +7,7 @@ import { getAiEnv } from "../../lib/ai/env";
 import { EXTRACTION_TIMEOUT_MS, EXTRACTION_CLIENT_TIMEOUT_MS } from "../../lib/ai/timeouts";
 import { ExtractionError } from "../../lib/ai/errors";
 import { OpenAiCardExtractor } from "../../lib/ai/openai-card-extractor";
+import { createExtractionLimit } from "../../lib/ai/extraction-limit";
 import { MAX_MULTIPART_BYTES, readExtractionImage } from "../../lib/ai/upload";
 import { MAX_IMAGE_BYTES } from "../../lib/utils/image";
 import { businessCard, emptyCard } from "../fixtures/extraction";
@@ -362,4 +363,27 @@ test("missing AI environment is a controlled configuration error", () => {
     if (priorModel === undefined) delete process.env.AI_MODEL;
     else process.env.AI_MODEL = priorModel;
   }
+});
+
+test("extraction throttles verified accounts before reading bodies and releases failed requests", async () => {
+  let time = 0;
+  const acquire = createExtractionLimit(() => time);
+  let account: string | null = "owner-A";
+  let calls = 0;
+  const handler = createExtractionHandler({ authenticate: async () => account, acquire, extract: async () => { calls++; return businessCard(); } });
+  account = null;
+  assert.equal((await handler(request(file(png)))).status, 401);
+  account = "owner-A";
+  assert.equal((await handler(request(file(Buffer.from("invalid"))))).status, 422);
+  for (let attempt = 1; attempt < 6; attempt++) assert.equal((await handler(request(file(png)))).status, 200);
+  const limited = await handler(request());
+  assert.equal(limited.status, 429);
+  assert.equal((await limited.json()).error.code, "REQUEST_RATE_LIMITED");
+  assert.equal(limited.headers.get("retry-after"), "60");
+  assert.equal(calls, 5);
+  account = "owner-B";
+  assert.equal((await handler(request(file(png)))).status, 200);
+  time = 60000;
+  account = "owner-A";
+  assert.equal((await handler(request(file(png)))).status, 200);
 });

@@ -5,9 +5,13 @@ import { readExtractionImage } from "./upload";
 import { EXTRACTION_TIMEOUT_MS } from "./timeouts";
 import { prepareExtractionImage } from "./prepare-image";
 import type { ExtractedCard, ExtractionImage } from "./types";
+import { isSameOriginRequest } from "@/lib/auth/request-origin";
+import { acquireExtraction } from "./extraction-limit";
+import { awaitExtraction } from "./abortable";
 
 export interface ExtractionDependencies {
-  authenticate: () => Promise<boolean>;
+  authenticate: () => Promise<boolean | string | null>;
+  acquire?: (userId: string) => () => void;
   extract: (
     image: ExtractionImage,
     signal: AbortSignal,
@@ -17,24 +21,17 @@ export interface ExtractionDependencies {
 export function createExtractionHandler(deps: ExtractionDependencies) {
   return async (request: Request): Promise<Response> => {
     const startedAt = Date.now();
+    let release: (() => void) | undefined;
     try {
-      const origin = request.headers.get("origin");
-      if (origin) {
-        // Next can reconstruct an internal URL when accessed through a LAN
-        // address or reverse proxy. Compare the browser origin to its public host.
-        const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host") ?? new URL(request.url).host;
-        let originHost: string;
-        try { originHost = new URL(origin).host; }
-        catch { throw new ExtractionError("FORBIDDEN"); }
-        if (originHost !== host) throw new ExtractionError("FORBIDDEN");
-      }
-      let authenticated: boolean;
+      if (!isSameOriginRequest(request)) throw new ExtractionError("FORBIDDEN");
+      let authenticated: boolean | string | null;
       try {
         authenticated = await deps.authenticate();
       } catch {
         throw new ExtractionError("AUTH_UNAVAILABLE");
       }
       if (!authenticated) throw new ExtractionError("UNAUTHORIZED");
+      if (typeof authenticated === "string") release = (deps.acquire ?? acquireExtraction)(authenticated);
       const originalImage = await readExtractionImage(request);
       const image = await prepareExtractionImage(originalImage);
       const signal = AbortSignal.any([
@@ -47,7 +44,7 @@ export function createExtractionHandler(deps: ExtractionDependencies) {
         timeoutMs: EXTRACTION_TIMEOUT_MS,
       });
       const result = extractedCardSchema.safeParse(
-        await deps.extract(image, signal),
+        await awaitExtraction(signal, () => deps.extract(image, signal)),
       );
       if (!result.success) throw new ExtractionError("EXTRACTION_FAILED");
       console.info("Card extraction completed", { elapsedMs: Date.now() - startedAt });
@@ -70,10 +67,10 @@ export function createExtractionHandler(deps: ExtractionDependencies) {
           status: failure.status,
           headers: {
             "Cache-Control": "private, no-store",
-            ...(failure.status === 429 ? { "Retry-After": "30" } : {}),
+            ...(failure.status === 429 ? { "Retry-After": failure.code === "REQUEST_RATE_LIMITED" ? "60" : "30" } : {}),
           },
         },
       );
-    }
+    } finally { release?.(); }
   };
 }

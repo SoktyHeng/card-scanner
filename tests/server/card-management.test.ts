@@ -176,3 +176,16 @@ test("mutation handlers reject expired sessions, forged owners, invalid data, un
   assert.ok(response.headers.get("cache-control")?.includes("no-store"));
   assert.equal(calls, 1);
 });
+
+test("management accepts public LAN Host and rejects malformed content types, timestamps and oversized streamed bodies", async () => {
+  let calls = 0;
+  const supabase = client(async () => { calls++; return Response.json([{ id }]); });
+  const handler = createManagementHandler(async () => ({ userId: owner, supabase }));
+  const route = { params: Promise.resolve({ id }) };
+  const request = (body: unknown, contentType = "application/json") => new Request(`http://internal/api/cards/${id}`, { method: "PATCH", headers: { origin: "http://192.168.1.121:3000", host: "192.168.1.121:3000", "content-type": contentType }, body: JSON.stringify(body) });
+  assert.equal((await handler(request({ operation: "archive" }), route)).status, 200);
+  assert.equal((await handler(request({ operation: "archive" }, "application/json-invalid"), route)).status, 400);
+  assert.equal((await handler(request({ operation: "update", expectedUpdatedAt: "not a timestamp", reviewedData: savedCardDraft(row) }), route)).status, 400);
+  assert.equal((await handler(request("x".repeat(1024 * 1024)), route)).status, 413);
+  assert.equal(calls, 1);
+});

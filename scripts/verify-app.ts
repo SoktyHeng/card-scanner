@@ -1,8 +1,26 @@
 import assert from "node:assert/strict";
 import { loadEnvConfig } from "@next/env";
+import { readdir, readFile } from "node:fs/promises";
+import { join } from "node:path";
 
 async function main() {
   loadEnvConfig(process.cwd());
+  const secrets = [process.env.AI_API_KEY, process.env.SUPABASE_SERVICE_ROLE_KEY]
+    .filter((value): value is string => !!value && value.length >= 12);
+  async function checkBrowserFiles(directory: string): Promise<void> {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) await checkBrowserFiles(path);
+      else if (entry.name.endsWith(".js")) {
+        const code = await readFile(path, "utf8");
+        assert.ok(!secrets.some(secret => code.includes(secret)), "A configured server secret was found in a browser bundle");
+      }
+    }
+  }
+  if (secrets.length) {
+    await checkBrowserFiles(join(process.cwd(), ".next", "static"));
+    console.log("PASS: Configured server keys absent from generated browser JavaScript");
+  } else console.log("BLOCKED: No configured server keys available for the browser-bundle leak check");
   const base = process.env.APP_BASE_URL || "http://localhost:3000";
   for (const path of [
     "/",
@@ -21,6 +39,10 @@ async function main() {
   const login = await fetch(base + "/login");
   const html = await login.text();
   assert.equal(login.status, 200);
+  assert.equal(login.headers.get("x-content-type-options"), "nosniff");
+  assert.equal(login.headers.get("referrer-policy"), "no-referrer");
+  assert.equal(login.headers.get("x-frame-options"), "DENY");
+  assert.match(login.headers.get("content-security-policy") ?? "", /frame-ancestors 'none'/);
   for (const text of [
     "Email address",
     "Password",

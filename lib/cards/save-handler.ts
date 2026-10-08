@@ -3,19 +3,14 @@ import { MAX_IMAGE_BYTES } from "@/lib/utils/image";
 import { readBoundedMultipart, validateOriginalImage } from "@/lib/ai/upload";
 import { saveCardSchema } from "./save-schema";
 import { DuplicateWarningError, SaveError, saveReviewedCard, type SaveContext } from "./save-service";
+import { isSameOriginRequest } from "@/lib/auth/request-origin";
 
 export const MAX_SAVE_DATA_BYTES = 3 * 1024 * 1024;
 export const MAX_SAVE_BODY_BYTES = MAX_IMAGE_BYTES + MAX_SAVE_DATA_BYTES + 64 * 1024;
 export function createSaveCardHandler(authenticate: () => Promise<SaveContext | null>) {
   return async (request: Request): Promise<Response> => {
     try {
-      const origin = request.headers.get("origin");
-      if (origin) {
-        const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host") ?? new URL(request.url).host;
-        let originHost: string;
-        try { originHost = new URL(origin).host; } catch { throw new SaveError("FORBIDDEN"); }
-        if (originHost !== host) throw new SaveError("FORBIDDEN");
-      }
+      if (!isSameOriginRequest(request)) throw new SaveError("FORBIDDEN");
       let context: SaveContext | null;
       try { context = await authenticate(); } catch { throw new SaveError("AUTH_UNAVAILABLE"); }
       if (!context) throw new SaveError("UNAUTHORIZED");

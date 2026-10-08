@@ -143,7 +143,7 @@ export function CardScanner() {
           <Button ref={saveButton} type="button" className="w-full sm:w-auto" disabled={busy} onClick={() => { void save(); }}>{saving ? "Saving card…" : state.status === "save_error" ? "Retry saving card" : "Save card"}</Button>
         </div>}
         {duplicateWarning && <DuplicateWarning warning={duplicateWarning} disabled={busy} onSaveAnyway={() => { void save(true); }} onCancel={() => { cancelDuplicateSave(); queueMicrotask(() => saveButton.current?.focus()); }} />}
-        {state.status === "save_error" && state.message.includes("session has expired") && <a className="inline-block py-3 underline" href="/login?next=%2Fscan">Sign in again</a>}
+        {(state.status === "save_error" || state.status === "extraction_error") && state.message.includes("session has expired") && <a className="inline-block rounded py-3 underline focus-visible:outline-2" href="/login?next=%2Fscan" target="_blank" rel="noopener noreferrer">Sign in in a new tab to keep your draft</a>}
       </CardContent>
     </Card>
   );

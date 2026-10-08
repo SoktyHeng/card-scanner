@@ -29,9 +29,17 @@ export function createCardSaveStore(supabase: SupabaseClient<Database>, userId: 
     },
     async remove(path) {
       const { data, error } = await bucket.remove([path]);
-      if (error || !data?.length) {
+      if (error) {
         console.warn("Card upload cleanup failed");
         return false;
+      }
+      if (!data?.length) {
+        // An already-removed object is safe only after confirming absence.
+        // Never interpret an empty/denied deletion response as successful cleanup.
+        const folder = path.slice(0, path.lastIndexOf("/"));
+        const name = path.slice(path.lastIndexOf("/") + 1);
+        const check = await bucket.list(folder, { search: name, limit: 100 });
+        return !check.error && !check.data.some(file => file.name === name);
       }
       return true;
     },

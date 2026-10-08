@@ -574,7 +574,112 @@ Production HTTP checks verify protected routes and anonymous/forged-session
 save denial. Hosted Auth and anonymous database/search denial pass. Live signed-in duplicate
 checks and two-user save flows remain blocked by missing `TEST_USER_A/B_EMAIL`
 and `TEST_USER_A/B_PASSWORD`; no hosted records or schema were changed.
-Phase 9 is outside this change.
+The following section records the subsequent Phase 9 audit.
+
+## Phase 9 — Production Hardening
+
+The audit checks verified sessions in server pages and API handlers, the absence
+of privileged Supabase clients, owner predicates in every card operation,
+database and storage RLS, strict Zod payloads, image content decoding, private
+signed URLs, safe errors, and logging that omits card contents and tokens.
+Read-only hosted metadata checks are reproducible with
+`npx supabase db query --linked --file scripts/audit-supabase.sql`.
+
+The hosted audit found that default Supabase grants had left authenticated
+users with TRUNCATE, TRIGGER and REFERENCES privileges on `cards`. Migration
+`supabase/migrations/20261007100951_production_card_grants.sql` revokes application
+role privileges before granting only SELECT, INSERT, UPDATE and DELETE.
+The existing owner policies remain in effect. This matters because
+[PostgreSQL RLS does not cover whole-table operations](https://www.postgresql.org/docs/current/ddl-rowsecurity.html).
+The migration was tested in embedded PostgreSQL, applied to the linked project
+after a dry run confirmed it was the only pending migration, and checked through
+live metadata afterward. No hosted card records were read or changed during the
+metadata audit. RLS is enabled on `cards` and `storage.objects`; the image bucket
+is private with a 10 MB limit and JPEG/PNG/WEBP allowlist. Search remains a
+security-invoker function with no anonymous execution permission.
+
+Scan, save and management endpoints now share an origin check. It supports
+the public Host used by LAN/reverse-proxy deployments, rejects cross-site Fetch
+Metadata and mismatched browser origins, and ignores caller-supplied
+X-Forwarded-Host. Deployment proxies must overwrite Host and X-Forwarded-Proto
+with the public host/protocol and enforce HTTPS. Scheme mismatches are rejected.
+Every request still requires verified
+authentication. Management JSON content types and edit timestamps are validated
+more precisely. Multipart and JSON bodies have actual-byte bounds; images are
+checked by content, fully decoded, restricted to one frame and 40 megapixels,
+and limited to 10 MB. Large analysis images are resized independently of the
+preserved original.
+
+Expensive extraction now allows six attempts per authenticated account per
+60-second window and one active request per account per Node process. Rejected
+requests return controlled 429 errors with Retry-After before reading the body
+or calling AI. Counters are bounded to 10,000 accounts and expired entries are
+removed. Failed attempts release concurrency. The endpoint also enforces its
+120-second extraction deadline if a provider fails to observe cancellation;
+existing providers pass the abort signal to their HTTP requests. No Redis,
+queue, additional service, or automatic retry loop was added. Supabase Auth's
+own limits remain responsible for login abuse protection.
+
+Expired-session scan/save errors offer sign-in in a new tab, preserving image
+and review values. Management requests have a 60-second client deadline and
+display allowlisted local error messages instead of upstream messages, malformed
+responses or network diagnostics. Ambiguous mutations instruct users to reload
+and check status. Save cleanup verifies object absence if storage returns an
+empty deletion response; uncertain cleanup remains an explicit error. Existing
+idempotent submission IDs, duplicate acknowledgement, stale edit protection,
+source preservation and disabled pending controls remain covered by tests.
+
+Responses add anti-framing, no-sniff, no-referrer and permissions-policy headers,
+plus CSP frame-ancestors, base-uri and object-src restrictions. This is a limited
+CSP, not full script isolation. `npm run verify:app` checks response headers,
+protected routes, forged-session denial, and configured server key values against
+generated browser JavaScript without printing those values.
+
+Verification (2026-10-07): **101 automated tests**, `npm run lint`,
+`npm run build`, and production HTTP verification pass. Production dependency
+audit (`npm audit --omit=dev`) reports zero known vulnerabilities at this time.
+Tests include real embedded PostgreSQL RLS/grants and storage-policy checks,
+auth expiration, actual image decoding/size failures, provider/output/timeouts,
+rate limits, safe errors, save cleanup, duplicate warnings and actions, labeled
+camera/upload inputs, draft retention, and accessible pending/confirmation states.
+The complete scan → review → save → detail → edit → archive → restore → delete
+integration uses the actual handlers and Supabase SDK with deterministic AI and
+Data/Storage API fixtures. It does **not** claim a successful live end-to-end scan.
+Hosted metadata, Auth health, and anonymous database/search denial pass.
+
+Remaining release checks and risks:
+
+- Live signed-in session refresh/sign-out, revoked/expired sessions, two-user
+  API isolation, storage cleanup/signing and complete live workflows are blocked
+  by missing `TEST_USER_A/B_EMAIL` and `TEST_USER_A/B_PASSWORD`. Configure two
+  disposable accounts and run `npm run verify:supabase`, then test the browser
+  journey with each account. Never use real customer cards as test fixtures.
+- No physical Android/iOS camera, mobile Safari/Chrome, or screen reader was
+  available. Verify capture/upload/replace, keyboard focus, announcement order,
+  320px layout, zoom, reduced motion, and the review/duplicate/deletion flows on
+  those devices. DOM tests do not establish full accessibility compliance.
+- Live AI accuracy, Khmer OCR, provider latency, and provider privacy/retention
+  behavior were not exercised by the deterministic tests. Test representative
+  permitted images with the deployed provider; human review remains mandatory.
+- The hosted security advisor still reports disabled leaked-password protection.
+  Enable it in eligible project Auth settings and rerun the advisor. No Auth
+  Management configuration tool is available in this session, and SQL grants
+  cannot change this Auth setting.
+- Process-local extraction limits reset on restart and do not coordinate across
+  replicas. Configure hosting/edge abuse limits and upload/read timeouts before
+  scaling. Duplicate lookup cost grows with the owner's collection size.
+- Storage and database writes are not atomic. A lost upload response, expired
+  session during cleanup, or partial deletion can leave an orphaned image or an
+  archived record. Controlled errors and stable submission IDs support recovery;
+  uncertain outcomes retain images. Administrators must reconcile orphaned
+  paths without bypassing owner access in the application.
+- Signed image URLs are bearer links valid for five minutes. Avoid logging their
+  query strings at the proxy or analytics layer; reload to renew an expired URL.
+  Use HTTPS, private/no-store page caching, and keep server secrets out of public
+  environment variables. The bundle check covers configured literal key values,
+  not arbitrary secret transformations or every infrastructure log.
+
+Phase 9 stays within the MVP; no advanced features or extra infrastructure were added.
 
 ## Phase 1 verification snapshot (2026-10-05)
 

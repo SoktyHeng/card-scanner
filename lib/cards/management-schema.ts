@@ -8,7 +8,7 @@ export const cardColumns: Record<StandardField, keyof Pick<CardRow, "name" | "co
   address: "address", cardNumber: "card_number", cardType: "card_type",
 };
 export const cardMutationSchema = z.discriminatedUnion("operation", [
-  z.strictObject({ operation: z.literal("update"), expectedUpdatedAt: z.string().min(1).max(64), reviewedData: reviewedCardSchema }),
+  z.strictObject({ operation: z.literal("update"), expectedUpdatedAt: z.iso.datetime({ offset: true }), reviewedData: reviewedCardSchema }),
   z.strictObject({ operation: z.enum(["archive", "restore"]) }),
 ]);
 export const cardDeleteSchema = z.strictObject({ confirmed: z.literal(true) });
