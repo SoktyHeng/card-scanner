@@ -61,7 +61,7 @@ export function createReviewDraft(source: ExtractedCard | ReviewedCard): ReviewD
   return {
     fields: Object.fromEntries(standardFields.map(key => [key, source[key] ?? ""])) as ReviewDraft["fields"],
     fieldConfidences: { ...source.fieldConfidences },
-    extraFields: source.extraFields.map((field, index) => ({ ...field, label: field.label ?? "", id: `ai-${index}` })),
+    extraFields: source.extraFields.map((field, index) => ({ ...field, label: field.label ?? "", value: field.value ?? "", id: `ai-${index}` })),
   };
 }
 export function editStandardField(draft: ReviewDraft, key: StandardField, value: string): ReviewDraft {

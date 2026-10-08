@@ -681,6 +681,19 @@ Remaining release checks and risks:
 
 Phase 9 stays within the MVP; no advanced features or extra infrastructure were added.
 
+## Field visibility in review, details and editing
+
+Standard and custom fields with null, undefined, empty or whitespace-only values
+are hidden initially. Empty field sections and source-text sections are omitted,
+and saved details no longer show “Not provided” placeholders. Responsive grids
+contain only visible fields. Empty cards explain how to enter information manually.
+Review and editing offer a labeled field selector and Add field button to reveal
+missing standard fields, reveal empty source custom fields, or add custom fields.
+Visible inputs stay mounted when cleared; conversion reveals and focuses its
+standard destination. Visibility is separate from the full draft and source data.
+Existing save validation remains unchanged: empty custom fields must receive a
+value or be removed, and validation reveals hidden invalid fields for correction.
+
 ## Phase 1 verification snapshot (2026-10-05)
 
 - Lint and production build pass.

@@ -7,7 +7,7 @@ import { CardReviewForm } from "../components/cards/card-review-form";
 import { ConfidenceBadge } from "../components/cards/confidence-badge";
 import { businessCard, emptyCard } from "./fixtures/extraction";
 import type { ReviewedCard } from "../lib/cards/review";
-import { createReviewDraft, validateReviewDraft } from "../lib/cards/review";
+import { createReviewDraft, reviewFieldOrder, validateReviewDraft } from "../lib/cards/review";
 
 afterEach(cleanup);
 
@@ -100,7 +100,106 @@ test("confidence boundaries, unknown fields and empty results remain confirmable
   unknown.unmount();
   const empty = render(createElement(CardReviewForm, { extraction: emptyCard(), confirmed: false, onConfirm: () => { confirmations++; }, onChange: () => {} }));
   assert.ok(empty.getByText(/No readable fields/));
-  assert.equal((empty.getByLabelText("Name") as HTMLInputElement).value, "");
+  assert.equal(empty.queryByLabelText("Name"), null);
   fireEvent.click(empty.getByRole("button", { name: "Confirm reviewed information" }));
   assert.equal(confirmations, 2);
+});
+
+test("review/edit hide empty values initially, add standard fields, and retain focused fields when cleared", async () => {
+  for (const editing of [false, true]) {
+    const source = businessCard();
+    source.jobTitle = " \t\n ";
+    source.extraFields.push({ label: "Empty source field", key: "empty_source", value: " ", confidence: 0.5 });
+    const snapshot = structuredClone(source);
+    const view = render(createElement(CardReviewForm, { extraction: source, editing, confirmed: false, onConfirm: () => {}, onChange: () => {} }));
+    assert.ok(view.getByLabelText("Name"));
+    assert.equal(view.queryByLabelText("Job title"), null);
+    assert.equal(view.queryByLabelText("Department"), null);
+    assert.equal(view.queryByLabelText("Value for additional field 2"), null);
+    fireEvent.change(view.getByLabelText("Field to add"), { target: { value: "standard:department" } });
+    fireEvent.click(view.getByRole("button", { name: "Add field" }));
+    const department = view.getByLabelText("Department") as HTMLInputElement;
+    await waitFor(() => assert.ok(document.activeElement === department));
+    fireEvent.change(department, { target: { value: "Finance" } });
+    fireEvent.change(department, { target: { value: "   " } });
+    assert.ok(document.activeElement === department);
+    assert.ok(view.getByLabelText("Department") === department);
+    assert.ok(!view.getByLabelText("Field to add").querySelector('option[value="standard:department"]'));
+    const name = view.getByLabelText("Name") as HTMLInputElement;
+    name.focus();
+    fireEvent.change(name, { target: { value: "" } });
+    assert.ok(view.getByLabelText("Name") === name);
+    assert.ok(document.activeElement === name);
+    assert.deepEqual(source, snapshot);
+    view.unmount();
+  }
+});
+
+test("empty cards allow manual standard/custom entry, custom clearing keeps focus and existing validation", async () => {
+  for (const editing of [false, true]) {
+    let saved: ReviewedCard | undefined;
+    const source = emptyCard();
+    const view = render(createElement(CardReviewForm, { extraction: source, editing, confirmed: false, onConfirm: data => { saved = data; }, onChange: () => {} }));
+    assert.equal(view.queryByText("Standard fields"), null);
+    assert.equal(view.queryByText("Additional fields"), null);
+    assert.equal(view.queryByText("Original source text"), null);
+    assert.ok(view.getByText(/Use Add field/));
+    fireEvent.change(view.getByLabelText("Field to add"), { target: { value: "standard:name" } });
+    fireEvent.click(view.getByRole("button", { name: "Add field" }));
+    fireEvent.change(view.getByLabelText("Name"), { target: { value: "Manual name" } });
+    fireEvent.click(view.getByRole("button", { name: "Add field" }));
+    await waitFor(() => assert.ok(document.activeElement === view.getByLabelText("Label for additional field 1")));
+    fireEvent.change(view.getByLabelText("Label for additional field 1"), { target: { value: "Tier" } });
+    const value = view.getByLabelText("Value for additional field 1") as HTMLInputElement;
+    value.focus();
+    fireEvent.change(value, { target: { value: "Gold" } });
+    fireEvent.change(value, { target: { value: "" } });
+    assert.ok(document.activeElement === value);
+    assert.ok(view.getByLabelText("Value for additional field 1") === value);
+    fireEvent.click(view.getByRole("button", { name: editing ? "Save changes" : "Confirm reviewed information" }));
+    assert.equal(Boolean(saved), false);
+    assert.match(view.getByRole("alert").textContent!, /Enter a value or remove/);
+    fireEvent.click(view.getByRole("button", { name: "Remove field 1" }));
+    assert.equal(view.queryByText("Additional fields"), null);
+    fireEvent.click(view.getByRole("button", { name: editing ? "Save changes" : "Confirm reviewed information" }));
+    assert.equal(saved?.name, "Manual name");
+    assert.deepEqual(saved?.extraFields, []);
+    view.unmount();
+  }
+});
+
+test("hidden source extras can be revealed explicitly or by validation without losing their indexes/data", async () => {
+  const source = businessCard();
+  source.extraFields.unshift({ label: "Missing value", key: "missing", value: "", confidence: 0.5 });
+  const snapshot = structuredClone(source);
+  const view = render(createElement(CardReviewForm, { extraction: source, confirmed: false, onConfirm: () => {}, onChange: () => {} }));
+  assert.equal(view.queryByLabelText("Value for additional field 1"), null);
+  assert.ok(view.getByLabelText("Value for additional field 2"));
+  fireEvent.change(view.getByLabelText("Field to add"), { target: { value: "extra:ai-0" } });
+  fireEvent.click(view.getByRole("button", { name: "Add field" }));
+  await waitFor(() => assert.ok(document.activeElement === view.getByLabelText("Value for additional field 1")));
+  fireEvent.click(view.getByRole("button", { name: "Confirm reviewed information" }));
+  assert.equal(view.getByLabelText("Value for additional field 1").getAttribute("aria-invalid"), "true");
+  assert.deepEqual(source, snapshot);
+  view.unmount();
+  const implicit = render(createElement(CardReviewForm, { extraction: source, confirmed: false, onConfirm: () => {}, onChange: () => {} }));
+  fireEvent.click(implicit.getByRole("button", { name: "Confirm reviewed information" }));
+  assert.equal(implicit.getByLabelText("Value for additional field 1").getAttribute("aria-invalid"), "true");
+});
+
+test("fully populated forms show every standard value, while empty corrected edit data takes precedence over AI", () => {
+  const source = businessCard();
+  for (const key of reviewFieldOrder) { source[key] = key === "email" ? "john@example.com" : `Value for ${key}`; source.fieldConfidences[key] = 0.95; }
+  let saved: ReviewedCard | undefined;
+  const full = render(createElement(CardReviewForm, { extraction: source, confirmed: false, onConfirm: data => { saved = data; }, onChange: () => {} }));
+  assert.equal(full.container.querySelectorAll('input:not([type="hidden"]), textarea').length, reviewFieldOrder.length + 2);
+  fireEvent.click(full.getByRole("button", { name: "Confirm reviewed information" }));
+  assert.equal(saved?.email, "john@example.com");
+  full.unmount();
+  const corrected = validateReviewDraft(createReviewDraft(emptyCard()));
+  assert.ok(corrected.success);
+  const edit = render(createElement(CardReviewForm, { extraction: source, initialData: corrected.data, editing: true, confirmed: false, onConfirm: () => {}, onChange: () => {} }));
+  assert.equal(edit.queryByLabelText("Name"), null);
+  assert.equal(edit.queryByLabelText("Value for additional field 1"), null);
+  assert.ok(edit.getByText(/This card has no populated fields/));
 });

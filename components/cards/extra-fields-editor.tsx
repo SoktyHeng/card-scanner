@@ -7,20 +7,18 @@ import { Label } from "@/components/ui/label";
 import { ConfidenceBadge } from "./confidence-badge";
 import { fieldLabels, reviewFieldOrder, type DraftExtraField, type StandardField } from "@/lib/cards/review";
 
-export function ExtraFieldsEditor({ fields, prefix, errors, onEdit, onAdd, onRemove, onConvert }: {
+export function ExtraFieldsEditor({ fields, visibleIds, prefix, errors, onEdit, onRemove, onConvert }: {
   fields: DraftExtraField[];
+  visibleIds: Set<string>;
   prefix: string;
   errors: Record<string, string>;
   onEdit: (id: string, change: Partial<Pick<DraftExtraField, "label" | "value">>) => void;
-  onAdd: () => void;
   onRemove: (id: string) => void;
   onConvert: (id: string, target: StandardField) => void;
 }) {
   return <fieldset className="space-y-4 min-w-0">
     <legend className="mb-3 text-base font-semibold">Additional fields</legend>
-    {fields.length === 0 && <p className="text-sm text-muted-foreground">No additional fields. Add one if needed.</p>}
-    {fields.map((field, index) => <ExtraFieldRow key={field.id} {...{ field, index, prefix, errors, onEdit, onRemove, onConvert }} />)}
-    <Button id={`${prefix}-add`} type="button" variant="outline" onClick={onAdd} disabled={fields.length >= 100} className="w-full sm:w-auto">Add field</Button>
+    {fields.map((field, index) => visibleIds.has(field.id) && <ExtraFieldRow key={field.id} {...{ field, index, prefix, errors, onEdit, onRemove, onConvert }} />)}
   </fieldset>;
 }
 
