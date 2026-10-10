@@ -732,7 +732,9 @@ deleting the card; partial storage failure keeps the archived record for retry.
 
 Tests cover conservative merging, all provider request formats, capture/review,
 front-only and two-image transactional writes, RLS isolation, signed URLs, flip
-controls and storage failure recovery. Hosted migration application, live provider
+controls and storage failure recovery. The front/back migration was applied to the
+linked hosted project on 2026-10-08 after a missing RPC caused save failures.
+Migration history is synchronized and anonymous RPC execution is denied. Live provider
 accuracy/latency and live two-user checks remain unverified; disposable test-user
 credentials are missing. Physical camera, visual 3D animation, mobile/tablet/
 desktop browser and screen-reader checks remain manual because browser automation
