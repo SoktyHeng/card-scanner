@@ -2313,8 +2313,188 @@ natural-language search
 multi-tenant support
 card sharing
 automatic cropping
-front/back card scanning
 advanced duplicate detection
 ```
 
 Do not implement those advanced features until the core scanning workflow is stable.
+
+---
+
+# 79. Incremental Roadmap After Phase 9
+
+Phases 1–9 have implementation code, with front/back scanning and duplicate
+warnings already implemented. Full production sign-off still depends on the
+remaining release checks. Use the latest dated verification in README.md as the
+current evidence; older phase snapshots are historical.
+
+The following phases are planned and not implemented by this documentation
+update. Work sequentially, preserving the existing scanning/review/save flow.
+Keep the MVP completion criteria separate from these enhancements. Do not
+rebuild front/back scanning or duplicate warnings as new features.
+
+For every phase, add meaningful tests for its business logic and security,
+run the applicable existing tests, lint and production build, and record dated
+results and unresolved checks in README.md. Version all schema changes and
+preserve RLS, private images, source extraction and mandatory final review.
+
+## Phase 10 — Release Validation and Automated Checks
+
+Tasks:
+
+1. Test physical Android and iOS capture/upload in mobile Chrome and Safari,
+   including replacement, cancellation, front/back images and interrupted saves.
+2. Test keyboard and screen-reader journeys through extraction, review,
+   duplicate warnings, editing, archive/restore and deletion. Check focus,
+   announcements, narrow layouts, zoom and reduced motion.
+3. Evaluate permitted real photos across card types, layouts, Khmer/English,
+   blur and glare. Record the provider/model, expected values, missing or invented
+   values, correction needs, failures and latency. Keep fixtures private or use
+   consented fictional cards; synthetic smoke tests alone do not establish accuracy.
+4. Verify deployed HTTPS, proxy headers, upload/read timeouts and hosting abuse
+   controls. Address the hosted leaked-password-protection warning where the
+   project plan supports it; document any remaining limitation.
+5. Add CI checks for supported Node, clean dependency installation, lint,
+   automated tests and production build on pull requests. Keep live Supabase and
+   paid AI checks opt-in with protected test credentials and fictional fixtures.
+
+Definition of done:
+
+- CI passes, and physical-device, screen-reader, real-photo and deployment
+  results are documented with any failures fixed or explicitly tracked.
+- Do not mark unavailable hardware or unperformed checks as passed.
+
+## Phase 11 — Password Recovery and Account Password Changes
+
+Tasks:
+
+1. Add a labeled Forgot password flow and Supabase recovery callback handling.
+2. Add a protected new-password screen with validation, confirmation and safe
+   expired/invalid-link errors. Validate redirect destinations.
+3. Add an authenticated change-password action with appropriate reauthentication.
+4. Configure production SMTP, recovery templates and allowed redirect URLs;
+   keep email credentials server-side and responses neutral about account existence.
+5. Verify recovery delivery, valid/expired links, password change and subsequent
+   sign-in with disposable accounts.
+
+Definition of done:
+
+- Users can recover access and change passwords without administrator help;
+  existing authentication and protected routes remain secure.
+
+## Phase 12 — Card Filters and Sorting
+
+Tasks:
+
+1. Add card-type, company and created-date filters alongside keyword search and
+   the existing active/archived selector.
+2. Add newest/oldest and name ascending/descending sorting with deterministic
+   tie-breakers and defined handling of missing names.
+3. Validate query parameters and allowlist sort fields server-side. Preserve
+   search/filter/sort state in URLs and pagination; reset the page on changes.
+4. Keep reads owner-scoped through RLS, provide clear/reset controls and useful
+   empty states, and verify combinations, date boundaries and user isolation.
+
+Definition of done:
+
+- Users can combine search, filters and sorting, share their own list URL, and
+  paginate consistently without exposing another user's records.
+
+## Phase 13 — CSV and vCard Export
+
+Tasks:
+
+1. Export selected cards or all cards matching the current search and filters,
+   making archive inclusion explicit and supporting results beyond one page.
+2. Produce UTF-8 CSV with standard columns and a documented representation of
+   custom-field arrays that preserves labels, keys, values and confidence.
+3. Produce compatible vCard contact files for available contact fields. Preserve
+   unsupported custom information in notes or clearly explain export limitations.
+4. Escape CSV formula-like values and vCard separators/newlines safely; verify
+   Khmer, multiline values, missing fields and import into representative tools.
+5. Authenticate exports, enforce ownership, bound export sizes and avoid logging
+   card contents. Exclude secrets, storage paths and signed image URLs.
+
+Definition of done:
+
+- Users can import exported data into spreadsheets and phone contacts; CSV
+  preserves custom fields, and cross-user export attempts are denied.
+
+## Phase 14 — Secure Draft Recovery
+
+Tasks:
+
+1. Offer opt-in recovery for selected images, extracted source data and corrected
+   review fields after refresh or accidental navigation.
+2. Store drafts server-side behind owner RLS and private storage, separate from
+   final cards. Do not persist sensitive card data in browser localStorage.
+3. Provide resume/discard controls, an explicit retention period and cleanup of
+   expired/discarded draft images. Document any limits on image recovery.
+4. Handle interrupted writes, session expiration and concurrent tabs; validate
+   restored data and preserve the existing final review and duplicate checks.
+5. Clear or mark the draft consumed after a confirmed final save, with retry
+   behavior that avoids duplicate cards and premature source-image deletion.
+
+Definition of done:
+
+- A user can resume an opted-in draft after reload; other users cannot access it,
+  and resuming never silently creates a final card or triggers paid extraction.
+
+## Phase 15 — Khmer and English Interface
+
+Tasks:
+
+1. Add Khmer/English language selection and persist the nonsensitive preference.
+2. Translate navigation, forms, validation, loading, errors, dialogs and
+   accessibility announcements through a shared message catalog.
+3. Provide appropriate document language, readable Khmer fonts and localized
+   date/number formatting with English fallback for missing messages.
+4. Preserve extracted names, labels and source values as written; switching UI
+   language must not translate or alter card contents or stored schema keys.
+5. Verify narrow layouts, long translations, keyboard and screen-reader usage
+   in both languages, with human review of Khmer translations.
+
+Definition of done:
+
+- The complete user journey works in either language without losing data or
+  changing extraction semantics.
+
+## Phase 16 — Consistent Cambodia Dates and Daily Counts
+
+Tasks:
+
+1. Use a shared Asia/Phnom_Penh time-zone policy for the dashboard's Scanned today
+   count, displayed dates and created-date filter boundaries.
+2. Keep timestamps stored in UTC; calculate local-day boundaries server-side
+   and convert them to UTC for database queries.
+3. Use explicit locale/time-zone formatting and clarify the chosen zone in UI
+   where needed. Avoid dependence on the deployment server's local clock zone.
+4. Test both sides of Cambodia midnight, month/year boundaries and inclusive
+   date ranges using an exclusive next-day upper bound.
+
+Definition of done:
+
+- Dashboard counts and date filters agree with displayed Cambodia dates,
+  regardless of the browser or hosting machine's time zone.
+
+## Phase 17 — Tags, Notes and Favorites
+
+Tasks:
+
+1. Add owner-scoped tags and card/tag relations through migrations; do not use
+   comma-separated tags. Enforce ownership for both sides of every relation.
+2. Add user-authored notes and a favorite flag, separate from raw OCR and
+   original AI extraction. Validate length and render notes safely.
+3. Allow adding/removing tags, editing notes and toggling favorites on cards;
+   add tag/favorite filters without losing existing search and sort state.
+4. Define archive, restore and delete behavior, clean relations on permanent
+   deletion, and preserve notes/tags in CSV exports with documented mapping.
+5. Test duplicate tag names, concurrent edits, inaccessible cards and cross-user
+   relation creation/read/update/delete attempts.
+
+Definition of done:
+
+- Users can organize their own cards by tags and favorites and add notes;
+  organization metadata remains private and source extraction is unchanged.
+
+These phases do not authorize RAG, chatbots, embeddings, organization hierarchies,
+queues or extra backend services. Those remain outside the incremental roadmap.

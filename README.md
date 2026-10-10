@@ -4,9 +4,190 @@ Next.js 16 App Router, strict TypeScript, Tailwind 4, shadcn/ui and Supabase.
 Authentication, front/back capture and upload, AI extraction, mandatory review,
 private image storage, card management, keyword search and duplicate detection.
 
+## Latest verification — 2026-10-10
+
+All nine phases have implementation code. Automated checks, live two-account
+isolation, hosted database/storage auditing and synthetic live AI checks pass.
+Physical-device and real-image release checks remain below.
+
+- Restored missing development dependencies. Added `.nvmrc` and Node engine
+  requirements after Node 23 hung a scanner interaction test; Node 24.21.0
+  completes the suite.
+- `npm test`: **124 passed**, zero failures (63 general/UI/PostgreSQL tests and
+  61 server tests). The complete mutation workflow uses controlled API fixtures;
+  database tests execute the actual migrations in embedded PostgreSQL.
+- `npm run lint` and `npm run build`: passed on Node 24.21.0.
+- Production HTTP verification: protected pages, login labels, security headers,
+  anonymous/forged-session mutation denial and configured server-key browser
+  bundle checks passed.
+- Live Supabase: Auth health and anonymous denial passed for `cards`,
+  `card_images`, `search_cards` and `save_card_with_images`. The live verifier now
+  includes the front/back metadata and transactional-save access checks; the
+  read-only metadata audit includes those objects too.
+- Two distinct disposable accounts passed live sign-in, refresh, verified-user,
+  CRUD/search/duplicate comparison, ownership reassignment denial, private
+  storage CRUD/signing, cleanup and sign-out. Extended checks passed the
+  transactional front/back metadata RPC, cross-user metadata denial and forged
+  RPC rollback. With `APP_BASE_URL=http://localhost:3100`, the running production
+  app also passed owner detail/restore and cross-user detail/archive/delete
+  denial. The temporary verifier record/image were removed successfully.
+- Hosted read-only audit through the existing Supabase dashboard session:
+  RLS is enabled on `cards`, `card_images` and `storage.objects`; all 11 policies
+  enforce the expected owner predicates with no additional broad policies.
+  Authenticated table grants match the migrations and contain no TRUNCATE,
+  TRIGGER or REFERENCES privileges. The bucket is private with a 10 MB limit
+  and JPEG/PNG/WEBP allowlist. Search/save RPCs are security invokers with a fixed
+  search path, authenticated execution and no anonymous execution. Security
+  Advisor shows zero errors and one warning for disabled leaked-password
+  protection. Supabase CLI remains unlinked without an access token; the hosted
+  audit was completed through the dashboard without changing schema or policies.
+- `npm run verify:ai`: **5/5 live synthetic scenarios passed** with the configured
+  NVIDIA provider: business, membership, employee, unlabeled code and Khmer.
+  Expected standard/custom values were preserved, unavailable contact values
+  stayed null, and the unlabeled code remained a low-confidence unknown field.
+  Generated images and the timestamped report are in ignored
+  `test-results/live-ai/`. This small sample does not establish accuracy on
+  photographs, blur, glare or arbitrary card layouts.
+- Live Chrome with an existing signed-in session: uploaded a generated,
+  nonpersonal business-card fixture, previewed it, ran the configured NVIDIA
+  provider, reviewed standard/custom fields and confidence, corrected a value,
+  removed/added custom fields, confirmed saving, displayed the saved original
+  image, edited the saved record, archived/restored it and found it by keyword
+  search. A second extraction displayed a duplicate warning for matching email
+  and phone; cancelling retained the review without creating a second card.
+  The sole saved fixture, `Verification Fixture — John Smith`, was left archived
+  for review. This verifies one synthetic image, not general OCR accuracy.
+- `npm audit --omit=dev`: zero known production vulnerabilities. The full audit
+  reports five high findings from one unpatched `braces` advisory propagated
+  through the ESLint tooling dependency chain. No framework downgrade or forced
+  audit fix was applied. See
+  [GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm).
+
+Still required before full production sign-off:
+
+1. Test physical Android/iOS camera capture, mobile Safari/Chrome and screen
+   reader behavior, including review, duplicate warnings and archive/delete.
+2. Test permitted real photographs with different layouts, blur, glare and Khmer
+   text. The live synthetic scenarios are useful smoke checks, not a statistical
+   OCR evaluation.
+3. Resolve the remaining hosted leaked-password-protection warning where the
+   project plan supports it, and verify deployed HTTPS/proxy/timeouts/abuse
+   controls described in Phase 9.
+
+To repeat live checks, configure two distinct disposable accounts in
+`.env.local`, start the app, then run:
+
+```bash
+APP_BASE_URL=http://localhost:3000 npm run verify:supabase
+npm run verify:ai
+```
+
+The Supabase verifier creates and cleans one synthetic card/image fixture;
+use a test project. The AI verifier consumes provider quota and sends only
+generated fictional images, with no database writes. For reliable Khmer fixture
+rendering, set `VERIFY_KHMER_FONT_FILE` to an installed Khmer font. On this Mac,
+verification used `/System/Library/Fonts/Supplemental/Khmer Sangam MN.ttf`.
+No passwords, API keys, tokens or provider payloads are printed by the scripts.
+
+## Incremental roadmap — Phases 10–17 (planned)
+
+Phases 1–9 have implementation code. Front/back scanning and duplicate warnings
+already exist. The following enhancements continue from Phase 9 and are **not
+yet implemented**. Full production sign-off still requires the release checks
+in the latest verification above. Older verification snapshots below are historical.
+
+Implement these phases in order. [AGENTS.md](AGENTS.md#79-incremental-roadmap-after-phase-9)
+contains the detailed tasks and completion criteria. For each phase, run relevant
+tests, lint and production build, preserve owner isolation and human review,
+version any migrations, and update this README with dated verification evidence.
+
+| Phase | Planned scope | Completion criteria |
+| --- | --- | --- |
+| 10 | Release validation and automated checks | Physical Android/iOS camera and mobile-browser journeys, keyboard/screen-reader behavior, representative real-photo extraction and deployed security settings are verified; CI runs lint, tests and build. |
+| 11 | Password recovery and password changes | Users can recover access by email and change passwords securely; SMTP, redirects and expired-link handling are verified. |
+| 12 | Card filters and sorting | Keyword search combines with card type, company, date and archive filters; newest/oldest and name sorting persist through URLs and pagination. |
+| 13 | CSV and vCard export | Selected cards or all matching results export safely to spreadsheets and contacts; CSV preserves custom fields and exports enforce ownership. |
+| 14 | Secure draft recovery | Users can opt in to resume images and corrected review fields after reload, with private owner-scoped storage, retention and discard controls. |
+| 15 | Khmer and English interface | Language selection covers navigation, forms, messages and accessibility announcements; card contents remain as written. |
+| 16 | Consistent Cambodia dates | Dashboard daily counts, displayed dates and date filters use Asia/Phnom_Penh consistently while database timestamps remain UTC. |
+| 17 | Tags, notes and favorites | Users can organize private cards with tags/favorites, write notes and filter by organization metadata without changing original AI data. |
+
+### Phase 10 — Release validation and automated checks
+
+Finish the outstanding physical-phone, screen-reader and real-photo checks before
+full production sign-off. Evaluate different layouts, Khmer/English, blur and glare
+with permitted fixtures; record failures, correction needs and latency rather than
+claiming general accuracy from the existing five synthetic scenarios. Verify HTTPS,
+proxy/timeouts/abuse controls and address the hosted password-security warning
+where supported. Add pull-request CI using supported Node, `npm ci`, lint, tests
+and build. Live account checks and paid AI evaluation remain opt-in with protected
+credentials. Unavailable hardware checks stay explicitly pending.
+
+### Phase 11 — Password recovery and password changes
+
+Add Forgot password, recovery callback and protected new-password screens, plus
+an authenticated change-password action. Validate redirects and passwords, handle
+invalid/expired links safely and avoid revealing whether an email has an account.
+Configure production SMTP and templates; verify the complete recovery journey
+with disposable users. Follow the
+[Supabase password authentication guide](https://supabase.com/docs/guides/auth/passwords).
+
+### Phase 12 — Card filters and sorting
+
+Add card-type, company and created-date filters alongside existing keyword and
+archive controls. Add newest/oldest and name ascending/descending sorting with
+stable tie-breakers. Validate all parameters server-side, preserve state in URLs
+and pagination, reset pagination after changes, and provide clear controls and
+useful empty states. Verify combined filters and cross-user denial.
+
+### Phase 13 — CSV and vCard export
+
+Export selected cards or the full matching collection, including results beyond
+one page, with archive inclusion clearly indicated. CSV must preserve custom
+field arrays and support Khmer/multiline content; vCard maps available contact
+fields with documented handling of additional information. Test imports, escaping
+and CSV formula protection. Export only authenticated owner data, bound size,
+and exclude secrets, image paths and signed URLs.
+
+### Phase 14 — Secure draft recovery
+
+Offer opt-in server-side draft persistence for images, AI source and corrected
+review fields. Use owner RLS and private storage, separate drafts from final cards,
+and provide resume/discard, retention and cleanup. Avoid sensitive localStorage.
+Verify interrupted writes, expiration, concurrent tabs and save retries. Restoring
+must not automatically run extraction or bypass final review/duplicate warnings.
+
+### Phase 15 — Khmer and English interface
+
+Add language selection with a persistent nonsensitive preference and shared
+translation catalog. Translate the complete interface, including errors and
+screen-reader announcements, use readable Khmer fonts and appropriate document
+language, and review translations with a Khmer speaker. Keep extracted names,
+labels, values and schema keys unchanged when switching languages.
+
+### Phase 16 — Consistent Cambodia dates
+
+Replace the dashboard's current UTC-day count with Asia/Phnom_Penh day boundaries
+and use the same policy for displayed dates and date filters. Retain UTC storage
+and translate local boundaries to UTC query ranges. Test local midnight and
+month/year transitions independent of browser/server time zones.
+
+### Phase 17 — Tags, notes and favorites
+
+Use owner-protected tag and card/tag tables, user-authored notes and a favorite
+flag. Add editing and tag/favorite filters while preserving search/sort state.
+Keep notes separate from OCR/AI source, define archive/delete behavior and include
+organization metadata in CSV exports. Test relation ownership, concurrent updates
+and cross-user denial. This phase follows the core usability improvements.
+
+RAG, chatbots, embeddings and additional backend infrastructure remain outside
+this roadmap. These plans extend the MVP without changing its completion criteria.
+
 ## Install and configure
 
-Use Node.js 20.9+ (Node 24 was used for verification).
+Use Node.js 24.15+ (recommended; `.nvmrc` selects Node 24), or Node 22.22.2+.
+The image/UI test dependencies require these versions. Node 23 is unsupported
+and can hang the scanner interaction tests. Install development dependencies too:
 
 ```bash
 npm ci

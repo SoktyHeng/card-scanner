@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { loadEnvConfig } from "@next/env";
 import { createClient } from "@supabase/supabase-js";
+import { createServerClient } from "@supabase/ssr";
 import { getPublicEnv } from "../lib/env";
 import { matchDuplicate, type DuplicateInput } from "../lib/cards/duplicates";
 import type { Database } from "../types/database";
@@ -23,6 +24,16 @@ async function main() {
       },
     });
   const anonymous = client();
+  function sessionClient() {
+    const jar = new Map<string, string>();
+    const supabase = createServerClient<Database>(url, key, {
+      cookies: {
+        getAll: () => Array.from(jar, ([name, value]) => ({ name, value })),
+        setAll: cookies => { for (const { name, value } of cookies) jar.set(name, value); },
+      },
+    });
+    return { supabase, cookie: () => Array.from(jar, ([name, value]) => `${name}=${value}`).join("; ") };
+  }
   const authHealth = await fetch(`${url}/auth/v1/settings`, {
     headers: { apikey: key },
     signal: AbortSignal.timeout(15000),
@@ -47,6 +58,17 @@ async function main() {
     "Anonymous reads must be denied; apply the migration if the table is missing.",
   );
   console.log("PASS: Anonymous database access denied");
+  const anonymousImages = await anonymous.from("card_images").select("id").limit(1);
+  const anonymousSave = await anonymous.rpc("save_card_with_images", { p_card: {}, p_images: [] });
+  if (anonymousImages.error?.code === "PGRST205" || anonymousSave.error?.code === "PGRST202") {
+    console.log("BLOCKED: Apply the card_front_back_images migration before image metadata and transactional-save verification.");
+    process.exitCode = 2;
+  } else {
+    for (const response of [anonymousImages, anonymousSave]) {
+      assert.ok(response.error && ["42501", "PGRST301"].includes(response.error.code), "Anonymous image metadata and transactional saves must be denied");
+    }
+    console.log("PASS: Anonymous image metadata and transactional-save execution denied");
+  }
   const anonymousSearch = await anonymous.rpc("search_cards", { p_query: "verification" }).select("id").limit(1);
   if (anonymousSearch.error?.code === "PGRST202") {
     console.log("BLOCKED: The card_keyword_search migration is not exposed on the hosted project yet.");
@@ -62,22 +84,35 @@ async function main() {
     );
     process.exitCode = 2;
   } else {
-    const a = client();
-    const b = client();
+    const sessionA = sessionClient();
+    const sessionB = sessionClient();
+    const a = sessionA.supabase;
+    const b = sessionB.supabase;
     const sessions = [];
     for (const [index, supabase] of [a, b].entries()) {
       const { data, error } = await supabase.auth.signInWithPassword({
         email: credentials[index].email!,
         password: credentials[index].password!,
       });
+      if (error) {
+        const safeCode = ["invalid_credentials", "email_not_confirmed", "over_request_rate_limit"].includes(error.code ?? "") ? error.code : "AUTH_FAILED";
+        console.log(`FAIL: Test account ${index + 1} sign-in: ${safeCode}`);
+        await Promise.all([a, b].map(supabase => supabase.auth.signOut({ scope: "local" })));
+      }
       assert.equal(error, null, `Test account ${index + 1} could not sign in`);
       assert.ok(data.user);
       sessions.push(data.user);
+      console.log(`PASS: Test account ${index + 1} sign-in`);
     }
     const [userA, userB] = sessions;
+    if (userA.id === userB.id) {
+      console.log("FAIL: Both credentials identify the same account. Configure two distinct users.");
+      await Promise.all([a, b].map(supabase => supabase.auth.signOut({ scope: "local" })));
+    }
     assert.notEqual(userA.id, userB.id, "Use two distinct test accounts");
     const id = randomUUID();
     const path = `${userA.id}/${id}/original.png`;
+    const backPath = `${userA.id}/${id}/back.png`;
     let cardCreated = false;
     let imageCreated = false;
     try {
@@ -87,9 +122,8 @@ async function main() {
       assert.equal(verifyError, null);
       assert.equal(verified.user?.id, userA.id);
       console.log("PASS: Sign-in, refresh and verified user");
-      const insert = await a
-        .from("cards")
-        .insert({
+      const insert = await a.rpc("save_card_with_images", {
+        p_card: {
           id,
           user_id: userA.id,
           name: "Foundation verification",
@@ -97,6 +131,7 @@ async function main() {
           email: `${id}@example.com`,
           phone: "+855 (12) 345-678",
           card_number: id,
+          original_image_path: path,
           extra_fields: [
             {
               label: null,
@@ -105,9 +140,27 @@ async function main() {
               confidence: 0.35,
             },
           ],
-        });
+        },
+        p_images: [{ side: "front", storage_path: path }, { side: "back", storage_path: backPath }],
+      });
       assert.equal(insert.error, null, "Own card insert failed");
       cardCreated = true;
+      const ownImages = await a.from("card_images").select("side,storage_path").eq("card_id", id).order("side");
+      assert.equal(ownImages.error, null);
+      assert.deepEqual(ownImages.data, [{ side: "back", storage_path: backPath }, { side: "front", storage_path: path }]);
+      const foreignImages = await b.from("card_images").select("id").eq("card_id", id);
+      assert.equal(foreignImages.error, null);
+      assert.deepEqual(foreignImages.data, []);
+      const foreignImageDelete = await b.from("card_images").delete().eq("card_id", id).select("id");
+      assert.equal(foreignImageDelete.error, null);
+      assert.deepEqual(foreignImageDelete.data, []);
+      assert.ok((await b.from("card_images").insert({ card_id: id, side: "front", storage_path: `${userB.id}/${id}/front.png` })).error);
+      const forgedId = randomUUID();
+      assert.ok((await b.rpc("save_card_with_images", { p_card: { id: forgedId, user_id: userA.id, original_image_path: `${userA.id}/${forgedId}/original.png` }, p_images: [{ side: "front", storage_path: `${userA.id}/${forgedId}/original.png` }] })).error);
+      const forgedRead = await a.from("cards").select("id").eq("id", forgedId);
+      assert.equal(forgedRead.error, null);
+      assert.deepEqual(forgedRead.data, []);
+      console.log("PASS: Transactional front/back metadata, cross-user image denial and forged RPC rollback");
       const search = await a.rpc("search_cards", { p_query: "FOUNDATION verification" }).select("id").eq("id", id);
       if (search.error?.code === "PGRST202") {
         console.log("BLOCKED: Apply the card_keyword_search migration before live keyword-search verification.");
@@ -240,6 +293,27 @@ async function main() {
       console.log(
         "PASS: Private storage CRUD, signed URLs and cross-user denial",
       );
+      if (process.env.APP_BASE_URL) {
+        const base = new URL(process.env.APP_BASE_URL).origin;
+        const ownPage = await fetch(`${base}/cards/${id}`, { headers: { Cookie: sessionA.cookie() }, signal: AbortSignal.timeout(30000) });
+        assert.equal(ownPage.status, 200, "Owner detail route failed");
+        assert.ok((await ownPage.text()).includes("Verified"));
+        for (const method of ["PATCH", "DELETE"]) {
+          const denied = await fetch(`${base}/api/cards/${id}`, { method, headers: { Cookie: sessionB.cookie(), Origin: base, "Content-Type": "application/json" }, body: JSON.stringify(method === "DELETE" ? { confirmed: true } : { operation: "archive" }), signal: AbortSignal.timeout(30000) });
+          assert.equal(denied.status, 404, "Cross-user mutation must be denied");
+          assert.equal((await denied.json()).error.code, "NOT_FOUND");
+        }
+        const foreignPage = await fetch(`${base}/cards/${id}`, { headers: { Cookie: sessionB.cookie() }, signal: AbortSignal.timeout(30000) });
+        const foreignHtml = await foreignPage.text();
+        assert.ok(foreignHtml.includes("This card could not be found") || foreignHtml.includes("Card not found"));
+        assert.ok(!foreignHtml.includes("Foundation verification") && !foreignHtml.includes(`${id}@example.com`));
+        const restored = await fetch(`${base}/api/cards/${id}`, { method: "PATCH", headers: { Cookie: sessionA.cookie(), Origin: base, "Content-Type": "application/json" }, body: JSON.stringify({ operation: "restore" }), signal: AbortSignal.timeout(30000) });
+        assert.equal(restored.status, 200, "Owner restore route failed");
+        const afterRestore = await a.from("cards").select("is_archived").eq("id", id).single();
+        assert.equal(afterRestore.error, null);
+        assert.equal(afterRestore.data?.is_archived, false);
+        console.log("PASS: Live authenticated detail/restore routes and cross-user detail/mutation denial");
+      }
     } finally {
       if (imageCreated)
         assert.equal(
