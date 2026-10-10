@@ -2327,8 +2327,9 @@ warnings already implemented. Full production sign-off still depends on the
 remaining release checks. Use the latest dated verification in README.md as the
 current evidence; older phase snapshots are historical.
 
-The following phases are planned and not implemented by this documentation
-update. Work sequentially, preserving the existing scanning/review/save flow.
+Phase 10 has automated tooling implemented; physical-device, screen-reader,
+real-photo and hosted release checks remain pending. Phases 11–17 are planned.
+Work sequentially, preserving the existing scanning/review/save flow.
 Keep the MVP completion criteria separate from these enhancements. Do not
 rebuild front/back scanning or duplicate warnings as new features.
 
@@ -2338,6 +2339,11 @@ results and unresolved checks in README.md. Version all schema changes and
 preserve RLS, private images, source extraction and mandatory final review.
 
 ## Phase 10 — Release Validation and Automated Checks
+
+Status (2026-10-10): CI workflow, opt-in real-photo evaluator and HTTPS deployment
+checker implemented. Local automated checks pass; hosted CI execution and manual
+release evidence remain pending. Use `docs/phase-10-validation.md` for the device
+matrix, evaluator instructions, deployment checklist and sign-off record.
 
 Tasks:
 

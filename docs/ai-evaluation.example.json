@@ -1,0 +1,39 @@
+{
+  "permittedForAiProcessing": true,
+  "cases": [
+    {
+      "id": "business-clear-01",
+      "image": "business-clear.jpg",
+      "capture": "physical-photo",
+      "cardType": "business",
+      "languages": [
+        "en"
+      ],
+      "conditions": [
+        "clear"
+      ],
+      "expected": {
+        "fields": {
+          "cardType": "business_card",
+          "name": "John Smith",
+          "company": "ABC Technology",
+          "jobTitle": "Senior Engineer",
+          "department": null,
+          "email": "john@example.com",
+          "phone": "+855 12 345 678",
+          "secondaryPhone": null,
+          "website": null,
+          "address": null,
+          "cardNumber": null
+        },
+        "extraFields": [
+          {
+            "label": "Employee Code",
+            "key": "employee_code",
+            "value": "EMP-00123"
+          }
+        ]
+      }
+    }
+  ]
+}

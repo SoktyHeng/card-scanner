@@ -89,11 +89,11 @@ rendering, set `VERIFY_KHMER_FONT_FILE` to an installed Khmer font. On this Mac,
 verification used `/System/Library/Fonts/Supplemental/Khmer Sangam MN.ttf`.
 No passwords, API keys, tokens or provider payloads are printed by the scripts.
 
-## Incremental roadmap — Phases 10–17 (planned)
+## Incremental roadmap — Phases 10–17
 
 Phases 1–9 have implementation code. Front/back scanning and duplicate warnings
-already exist. The following enhancements continue from Phase 9 and are **not
-yet implemented**. Full production sign-off still requires the release checks
+already exist. Phase 10 has automated tooling implemented with release checks
+pending; Phases 11–17 are **planned**. Full production sign-off requires the checks
 in the latest verification above. Older verification snapshots below are historical.
 
 Implement these phases in order. [AGENTS.md](AGENTS.md#79-incremental-roadmap-after-phase-9)
@@ -114,14 +114,44 @@ version any migrations, and update this README with dated verification evidence.
 
 ### Phase 10 — Release validation and automated checks
 
-Finish the outstanding physical-phone, screen-reader and real-photo checks before
-full production sign-off. Evaluate different layouts, Khmer/English, blur and glare
-with permitted fixtures; record failures, correction needs and latency rather than
-claiming general accuracy from the existing five synthetic scenarios. Verify HTTPS,
-proxy/timeouts/abuse controls and address the hosted password-security warning
-where supported. Add pull-request CI using supported Node, `npm ci`, lint, tests
-and build. Live account checks and paid AI evaluation remain opt-in with protected
-credentials. Unavailable hardware checks stay explicitly pending.
+**Status (2026-10-10): automated tooling implemented; full phase sign-off pending.**
+
+- [CI workflow](.github/workflows/ci.yml) runs on pull requests, pushes to main/master
+  and manual dispatch. It uses Node from `.nvmrc`, `npm ci`, lint, tests and build,
+  with pinned actions, read-only permissions and no live-account or AI secrets.
+  Configuration follows the official [setup-node](https://github.com/actions/setup-node)
+  and [checkout](https://github.com/actions/checkout) documentation.
+- `npm run evaluate:ai -- MANIFEST --send-to-provider` evaluates permitted physical
+  photos using complete human-reviewed ground truth, including optional back
+  images. The explicit flag is required before images can be transmitted or paid
+  requests made. Reports record provider/model, case conditions, field mismatches,
+  corrections and latency without card values or raw OCR. Reports/fixtures stay
+  in ignored `test-results/`; this command never writes cards to Supabase.
+- `npm run verify:deployment -- https://YOUR-HOST` checks HTTPS login, HSTS/security
+  headers, private protected-route redirects and anonymous/cross-site API denial.
+  Requests have 15-second deadlines and transmit no images or credentials.
+- [Release validation record](docs/phase-10-validation.md) provides physical-phone
+  and screen-reader matrices, real-photo evaluation instructions, hosting checks
+  and a sign-off template. A fictional [manifest example](docs/ai-evaluation.example.json)
+  is provided for photos you take of fictional cards.
+
+Local verification on Node 24.21.0: clean `npm ci`, **130 automated tests**
+(69 general/UI/PostgreSQL/tooling + 61 server), lint, production build and
+production HTTP verification passed. CI YAML parses; the example manifest
+validates; the evaluator rejects missing transmission consent before contacting
+AI. New tests cover ground-truth/permission validation, missing/incorrect/invented
+values, private reports, Khmer/email comparison, safe deployment origins, HSTS,
+caching and cross-site denial. Deployment tests use controlled responses and do
+not claim a real hosted check. The existing five high development-tool audit
+findings remain; no forced dependency downgrade was applied.
+
+**Still pending:** actual hosted CI run/branch protection, physical Android/iOS
+camera and mobile browsers, VoiceOver/TalkBack and keyboard usability, permitted
+real photographs, provider-retention review and hosted HTTPS/proxy/timeouts/edge
+limits/Auth settings. The user confirmed the app is not deployed yet. No live AI
+quota was consumed or hosted settings changed in this phase. Earlier synthetic
+AI and Supabase results remain historical evidence, not a real-photo sign-off.
+Computer/browser control was not used. Phases 11–17 remain unimplemented.
 
 ### Phase 11 — Password recovery and password changes
 
