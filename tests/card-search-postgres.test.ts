@@ -74,9 +74,38 @@ test("PostgreSQL keyword search matches all six fields literally, paginates, fil
     assert.equal(first.length, 24); assert.equal(second.length, 3);
     assert.deepEqual(new Set([...first, ...second]), new Set(pageIds));
     assert.deepEqual(await search("pagination", false, 24, 48), []);
+    // Filter boundaries are Cambodia local midnight (17:00 UTC the day before).
+    const filterIds = Array.from({ length: 6 }, () => randomUUID());
+    const filterValues = [
+      ["Outside before", "2026-10-09T16:59:59.999Z"],
+      ["Alice", "2026-10-09T17:00:00Z"],
+      ["Alice", "2026-10-09T17:00:00Z"],
+      ["Bob", "2026-10-10T16:59:59.999Z"],
+      [null, "2026-10-10T00:00:00Z"],
+      ["Outside after", "2026-10-10T17:00:00Z"],
+    ];
+    for (const [index, [name, created]] of filterValues.entries())
+      await db.query("insert into public.cards(id,user_id,name,company,card_type,created_at) values ($1,$2,$3,$4,'custom_card',$5)", [filterIds[index], owner, name, "Acme %_*", created]);
+    await db.exec("reset role");
+    const foreignFilterId = randomUUID();
+    await db.query("insert into public.cards(id,user_id,name,company,card_type,created_at) values ($1,$2,'Foreign','Acme %_*','custom_card','2026-10-10T00:00:00Z')", [foreignFilterId, other]);
+    await db.exec("set role authenticated");
+    async function filtered(order: string, offset = 0, limit = 100, keyword = "") {
+      return (await db.query<{ id: string }>(`select id from public.search_cards($1) where is_archived=false and company=$2 and card_type=$3 and created_at >= $4 and created_at < $5 order by ${order} limit $6 offset $7`, [keyword, "Acme %_*", "custom_card", "2026-10-09T17:00:00Z", "2026-10-10T17:00:00Z", limit, offset])).rows.map(row => row.id);
+    }
+    const tied = [filterIds[1], filterIds[2]].sort().reverse();
+    assert.deepEqual(await filtered("name asc nulls last,created_at desc,id desc"), [...tied, filterIds[3], filterIds[4]]);
+    assert.deepEqual(await filtered("name desc nulls last,created_at desc,id desc"), [filterIds[3], ...tied, filterIds[4]]);
+    assert.deepEqual(await filtered("created_at desc,id desc"), [filterIds[3], filterIds[4], ...tied]);
+    assert.deepEqual(await filtered("created_at asc,id asc"), [...tied.slice().reverse(), filterIds[4], filterIds[3]]);
+    const filterPage1 = await filtered("name asc nulls last,created_at desc,id desc", 0, 2);
+    const filterPage2 = await filtered("name asc nulls last,created_at desc,id desc", 2, 2);
+    assert.deepEqual([...filterPage1, ...filterPage2], [...tied, filterIds[3], filterIds[4]]);
+    assert.deepEqual(await filtered("name asc nulls last,id desc", 0, 100, "ALICE"), tied);
     await db.query("select set_config('request.jwt.claim.sub',$1,false)", [other]);
+    assert.deepEqual(await filtered("name asc nulls last,id desc"), [foreignFilterId]);
     assert.deepEqual(await search("Alice"), [otherId]);
-    assert.deepEqual(await search("%"), []);
+    assert.deepEqual(await search("%"), [foreignFilterId]);
     assert.deepEqual(await search("Alice", true), []);
     await db.query("select set_config('request.jwt.claim.sub','',false)");
     assert.deepEqual(await search(""), []);

@@ -4,7 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 import { reviewedCardSchema } from "./review";
 import { ownsImagePath } from "./management-schema";
-import { cardSearchQuerySchema } from "./search";
+import { cardSearchQuerySchema, cardListFiltersSchema, cardDateBounds, DEFAULT_CARD_FILTERS, type CardListFilters } from "./search";
 import { loadCardImagePaths } from "./image-paths";
 
 export const SIGNED_IMAGE_SECONDS = 300;
@@ -31,16 +31,24 @@ export async function getSavedCard(supabase: SupabaseClient<Database>, userId: s
 }
 
 export const CARDS_PER_PAGE = 24;
-export async function getCardList(supabase: SupabaseClient<Database>, userId: string, archived: boolean, page: number, query = "") {
+export async function getCardList(supabase: SupabaseClient<Database>, userId: string, archived: boolean, page: number, query = "", input: CardListFilters = DEFAULT_CARD_FILTERS) {
   const keyword = cardSearchQuerySchema.parse(query);
+  const filters = cardListFiltersSchema.parse(input);
+  const dates = cardDateBounds(filters);
   if (!Number.isSafeInteger(page) || page < 1 || page > 100000) throw new Error("Invalid card list page.");
   // Empty search uses the existing list query and does not require the RPC.
   const source = keyword ? supabase.rpc("search_cards", { p_query: keyword }) : supabase.from("cards");
-  const result = await source
+  let request = source
     .select("id,name,company,job_title,phone,email,created_at,original_image_path")
-    .eq("user_id", userId).eq("is_archived", archived)
-    .order("created_at", { ascending: false }).order("id", { ascending: false })
-    .range((page - 1) * CARDS_PER_PAGE, page * CARDS_PER_PAGE);
+    .eq("user_id", userId).eq("is_archived", archived);
+  if (filters.cardType) request = request.eq("card_type", filters.cardType);
+  if (filters.company) request = request.eq("company", filters.company);
+  if (dates.from) request = request.gte("created_at", dates.from);
+  if (dates.until) request = request.lt("created_at", dates.until);
+  if (filters.sort === "name_asc" || filters.sort === "name_desc")
+    request = request.order("name", { ascending: filters.sort === "name_asc", nullsFirst: false });
+  request = request.order("created_at", { ascending: filters.sort === "oldest" }).order("id", { ascending: filters.sort === "oldest" });
+  const result = await request.range((page - 1) * CARDS_PER_PAGE, page * CARDS_PER_PAGE);
   if (result.error) throw new Error("Unable to load your cards. Please try again.");
   const hasNext = result.data.length > CARDS_PER_PAGE;
   const cards = await Promise.all(result.data.slice(0, CARDS_PER_PAGE).map(async card => {

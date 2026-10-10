@@ -4,7 +4,7 @@ import { afterEach, test } from "node:test";
 import { createElement } from "react";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { CardSearchForm } from "../components/cards/card-search";
-import { cardListHref, cardSearchQuerySchema, parseCardListParams } from "../lib/cards/search";
+import { cardListHref, cardSearchQuerySchema, parseCardListParams, DEFAULT_CARD_FILTERS } from "../lib/cards/search";
 
 // React's progressive form handling constructs FormData from the DOM form.
 // Node's fetch FormData has no HTMLFormElement overload.
@@ -33,7 +33,7 @@ test("URL state preserves search/filter through pagination and resets page for s
   assert.equal(cardListHref("", true), "/cards?status=archived");
   assert.equal(cardListHref("", false), "/cards");
   assert.equal(new URL(cardListHref(query, false, 4), url).searchParams.get("q"), query);
-  assert.deepEqual(parseCardListParams({ q: "  Alice  ", status: "archived", page: "3" }), { query: "Alice", archived: true, page: 3, error: null });
+  assert.deepEqual(parseCardListParams({ q: "  Alice  ", status: "archived", page: "3" }), { query: "Alice", archived: true, page: 3, error: null, filters: DEFAULT_CARD_FILTERS });
   for (const page of ["-1", "1.2", "1e2", "100001", "bad", ["1", "2"]]) assert.equal(parseCardListParams({ page }).page, 1);
 });
 test("accessible search submits and clears with the archive filter and no stale pagination", async () => {
@@ -72,4 +72,25 @@ test("search announces pending navigation and prevents duplicate submissions", a
   assert.equal(calls, 1);
   finish!();
   await waitFor(() => assert.equal((view.getByRole("button", { name: "Search" }) as HTMLButtonElement).disabled, false));
+});
+
+test("filter form combines inputs, preserves filters on clear, and rejects reversed dates", async () => {
+  const urls: string[] = [];
+  const filters = { ...DEFAULT_CARD_FILTERS, company: "Original company", sort: "oldest" as const };
+  const view = render(createElement(CardSearchForm, { query: "Alice", archived: true, filters, navigate: href => { urls.push(href); } }));
+  fireEvent.change(view.getByLabelText("Card type (exact)"), { target: { value: "business_card" } });
+  fireEvent.change(view.getByLabelText("Company (exact)"), { target: { value: "Acme" } });
+  fireEvent.change(view.getByLabelText("Created from"), { target: { value: "2026-10-10" } });
+  fireEvent.change(view.getByLabelText("Created through"), { target: { value: "2026-10-09" } });
+  fireEvent.submit(view.getByRole("search"));
+  assert.match(view.getByRole("alert").textContent!, /Start date/); assert.equal(urls.length, 0);
+  fireEvent.change(view.getByLabelText("Created through"), { target: { value: "2026-10-10" } });
+  fireEvent.change(view.getByLabelText("Sort cards"), { target: { value: "name_desc" } });
+  fireEvent.submit(view.getByRole("search"));
+  await waitFor(() => assert.equal(urls.length, 1));
+  const url = new URL(urls[0], "https://app.test");
+  assert.equal(url.searchParams.get("sort"), "name_desc"); assert.equal(url.searchParams.get("company"), "Acme"); assert.equal(url.searchParams.get("q"), "Alice"); assert.equal(url.searchParams.has("page"), false);
+  fireEvent.click(view.getByRole("button", { name: "Clear search" }));
+  await waitFor(() => assert.equal(urls[1], cardListHref("", true, 1, filters)));
+  assert.equal(view.getByRole("link", { name: "Reset search, filters and sorting" }).getAttribute("href"), "/cards?status=archived");
 });

@@ -2330,8 +2330,8 @@ current evidence; older phase snapshots are historical.
 Phase 10 has automated tooling implemented; physical-device, screen-reader,
 real-photo and hosted release checks remain pending. Phase 11 has password-flow
 code and hosted Auth/email acceptance checks completed for localhost. Deployed
-HTTPS verification remains part of the Phase 10 release checks. Phases 12–17
-are planned.
+HTTPS verification remains part of the Phase 10 release checks. Phase 12 filters
+and sorting are implemented and validated. Phases 13–17 are planned.
 Work sequentially, preserving the existing scanning/review/save flow.
 Keep the MVP completion criteria separate from these enhancements. Do not
 rebuild front/back scanning or duplicate warnings as new features.
@@ -2401,6 +2401,13 @@ Definition of done:
   existing authentication and protected routes remain secure.
 
 ## Phase 12 — Card Filters and Sorting
+
+Status (2026-10-10): implemented. Exact card-type/company filters, inclusive
+Cambodia created-date ranges, four stable sorts, URL/pagination state, reset
+controls and filtered empty states are present. All 149 automated tests, lint and
+production build pass. Hosted two-user checks passed combined filters/search,
+date boundaries, missing names, stable pages and RLS isolation; generated
+fixtures were deleted and removal verified. No migration or RLS change required.
 
 Tasks:
 

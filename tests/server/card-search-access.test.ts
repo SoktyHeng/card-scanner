@@ -46,3 +46,22 @@ test("whitespace search uses the existing owner-scoped list, and search outages 
   fail = true;
   await assert.rejects(getCardList(client, owner, false, 1, "Alice"), /Unable to load your cards/);
 });
+
+test("combined exact filters and inclusive Cambodia dates use allowlisted stable orders on both list sources", async () => {
+  const { DEFAULT_CARD_FILTERS } = await import("../../lib/cards/search");
+  for (const query of ["", "Alice"]) for (const sort of ["newest", "oldest", "name_asc", "name_desc"] as const) {
+    const client = createClient<Database>("https://example.supabase.co", "test-key", { auth: { persistSession: false }, global: { fetch: async input => {
+      const url = new URL(String(input));
+      assert.equal(url.pathname, query ? "/rest/v1/rpc/search_cards" : "/rest/v1/cards");
+      assert.equal(url.searchParams.get("user_id"), `eq.${owner}`);
+      assert.equal(url.searchParams.get("is_archived"), "eq.false");
+      assert.equal(url.searchParams.get("company"), `eq.O'Brien, %_* (VIP)`);
+      assert.equal(url.searchParams.get("card_type"), "eq.custom_card");
+      assert.deepEqual(url.searchParams.getAll("created_at"), ["gte.2026-10-09T17:00:00.000Z", "lt.2026-10-10T17:00:00.000Z"]);
+      assert.equal(url.searchParams.get("order"), sort === "newest" ? "created_at.desc,id.desc" : sort === "oldest" ? "created_at.asc,id.asc" : `name.${sort === "name_asc" ? "asc" : "desc"}.nullslast,created_at.desc,id.desc`);
+      assert.equal(url.searchParams.get("offset"), "24"); assert.equal(url.searchParams.get("limit"), "25");
+      return Response.json([]);
+    } } });
+    await getCardList(client, owner, false, 2, query, { ...DEFAULT_CARD_FILTERS, company: "O'Brien, %_* (VIP)", cardType: "custom_card", from: "2026-10-10", to: "2026-10-10", sort });
+  }
+});

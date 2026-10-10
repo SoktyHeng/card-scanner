@@ -95,7 +95,8 @@ Phases 1–9 have implementation code. Front/back scanning and duplicate warning
 already exist. Phase 10 has automated tooling implemented with release checks
 pending. Phase 11 has password-flow code and hosted Auth/email checks completed
 against the localhost production app;
-Phases 12–17 are **planned**. Full production sign-off requires the checks
+Phase 12 filters/sorting are implemented and validated; Phases 13–17 are
+**planned**. Full production sign-off requires the checks
 in the latest verification above. Older verification snapshots below are historical.
 
 Implement these phases in order. [AGENTS.md](AGENTS.md#79-incremental-roadmap-after-phase-9)
@@ -250,11 +251,35 @@ Docker's separate local Auth/email stack was not needed for these hosted checks.
 
 ### Phase 12 — Card filters and sorting
 
-Add card-type, company and created-date filters alongside existing keyword and
-archive controls. Add newest/oldest and name ascending/descending sorting with
-stable tie-breakers. Validate all parameters server-side, preserve state in URLs
-and pagination, reset pagination after changes, and provide clear controls and
-useful empty states. Verify combined filters and cross-user denial.
+**Status (2026-10-10): implemented and validated.**
+
+The card list now combines keyword search, active/archived state, exact card-type
+and company filters, inclusive created-date ranges and four sorts: newest,
+oldest, name A–Z and name Z–A. Exact filters preserve punctuation literally and
+are case-sensitive, as stated beside the controls. Dates use Cambodia calendar
+days converted to UTC, with an exclusive next-day upper bound. Name sorts put
+null names last in both directions; created time and ID resolve ties. PostgreSQL
+collation determines name ordering. Timestamp sorts use ID as their tie-breaker.
+
+Zod validates scalar query values, date validity/ranges and allowlisted sort
+choices server-side. Invalid filters display a controlled error without running
+the card query. Search, filters and sort are preserved in URLs, archive switches
+and page links; applying changes resets pagination. Clear search preserves applied
+filters; reset clears search, filters and sorting while preserving archive state.
+The native GET form remains usable before hydration. Labeled controls, pending
+states and useful filtered empty states support mobile and keyboard use.
+
+Validation: **149 automated tests** (78 general/UI/PostgreSQL and 71 server), lint
+and production build passed on Node 24.21.0. PostgreSQL tests cover both date
+boundaries, tied values, null names, stable pages and RLS. Actual hosted checks
+with two disposable users passed combined filters on keyword/plain list sources,
+all four sorts, pagination, archives and cross-user denial. Only generated fixture
+records were deleted afterward, and removal was confirmed. Production HTTP checks
+also verified combined form values, archive/pagination URLs, filtered empty states
+and safe handling of invalid/repeated parameters. The temporary verification
+server was stopped afterward; no browser/computer control was used. No schema migration,
+additional infrastructure or privileged/service-role client was required.
+Existing Phase 10 deployment and physical-device release checks remain open.
 
 ### Phase 13 — CSV and vCard export
 
