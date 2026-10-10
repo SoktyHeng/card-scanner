@@ -15,7 +15,8 @@
     "verify:app": "tsx scripts/verify-app.ts",
     "verify:ai": "node --conditions=react-server --import tsx scripts/verify-ai.ts",
     "evaluate:ai": "node --conditions=react-server --import tsx scripts/evaluate-ai.ts",
-    "verify:deployment": "tsx scripts/verify-deployment.ts"
+    "verify:deployment": "tsx scripts/verify-deployment.ts",
+    "verify:password": "node --conditions=react-server --import tsx scripts/verify-password.ts"
   },
   "dependencies": {
     "@supabase/ssr": "0.12.7",

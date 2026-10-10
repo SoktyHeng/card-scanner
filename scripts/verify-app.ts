@@ -5,7 +5,7 @@ import { join } from "node:path";
 
 async function main() {
   loadEnvConfig(process.cwd());
-  const secrets = [process.env.AI_API_KEY, process.env.SUPABASE_SERVICE_ROLE_KEY]
+  const secrets = [process.env.AI_API_KEY, process.env.SUPABASE_SERVICE_ROLE_KEY, process.env.AUTH_RECOVERY_SECRET]
     .filter((value): value is string => !!value && value.length >= 12);
   async function checkBrowserFiles(directory: string): Promise<void> {
     for (const entry of await readdir(directory, { withFileTypes: true })) {
@@ -29,6 +29,7 @@ async function main() {
     "/cards/00000000-0000-4000-8000-000000000003",
     "/cards/00000000-0000-4000-8000-000000000003/edit",
     "/scan",
+    "/account",
   ]) {
     const response = await fetch(base + path, { redirect: "manual" });
     assert.equal(response.status, 307, `Unauthenticated route ${path}`);
@@ -52,6 +53,27 @@ async function main() {
   ])
     assert.ok(html.includes(text));
   console.log("PASS: Login renders labelled credential fields");
+  assert.ok(html.includes("Forgot password?"));
+  const forgot = await fetch(base + "/forgot-password");
+  assert.equal(forgot.status, 200);
+  assert.match(forgot.headers.get("cache-control") ?? "", /no-store/);
+  const forgotHtml = await forgot.text();
+  for (const label of ["Email address", "Send reset link", "Back to sign in"]) assert.ok(forgotHtml.includes(label));
+  const reset = await fetch(base + "/auth/new-password", { redirect: "manual" });
+  assert.equal(reset.status, 307);
+  assert.equal(reset.headers.get("location"), "/forgot-password?error=invalid_link");
+  const invalidLink = await fetch(base + "/auth/recovery?type=signup&token_hash=invalid&next=https://outside.invalid", { redirect: "manual" });
+  assert.equal(invalidLink.status, 200);
+  assert.ok((await invalidLink.text()).includes("This password reset link is invalid or has expired."));
+  for (const query of ["type=recovery&token_hash=a&token_hash=b", "type=recovery&type=signup&token_hash=" + "a".repeat(64)]) {
+    const repeated = await fetch(base + "/auth/recovery?" + query);
+    assert.equal(repeated.status, 200);
+    assert.ok((await repeated.text()).includes("This password reset link is invalid or has expired."));
+  }
+  const updated = await fetch(base + "/auth/password-updated");
+  assert.equal(updated.status, 200);
+  assert.ok((await updated.text()).includes("Sign in with your new password"));
+  console.log("PASS: Recovery request renders; anonymous new-password and invalid recovery links fail closed");
 
   const projectUrl = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL!);
   const key = `sb-${projectUrl.hostname.split(".")[0]}-auth-token`;

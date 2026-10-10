@@ -7,6 +7,8 @@ export const config = {
   matcher: [
     "/",
     "/login",
+    "/forgot-password",
+    "/account/:path*",
     "/auth/:path*",
     "/dashboard/:path*",
     "/cards/:path*",

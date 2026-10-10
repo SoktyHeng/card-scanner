@@ -2,8 +2,8 @@
 import { useActionState } from "react";
 import { signOut } from "@/app/auth/actions";
 import { Button } from "@/components/ui/button";
-export function SignOutButton() {
-  const [state, action, pending] = useActionState(signOut, {});
+export function SignOutButton({ action: signOutAction = signOut }: { action?: typeof signOut } = {}) {
+  const [state, action, pending] = useActionState(signOutAction, {});
   return (
     <form action={action}>
       <Button type="submit" variant="outline" loading={pending}>

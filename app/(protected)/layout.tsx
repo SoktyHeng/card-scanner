@@ -32,6 +32,7 @@ export default async function ProtectedLayout({
             <p className="hidden max-w-64 truncate text-sm text-muted-foreground sm:block">
               {user.email}
             </p>
+            <Link href="/account" className="inline-flex min-h-11 items-center rounded-lg px-2 text-sm text-primary underline focus-visible:outline-2 focus-visible:outline-ring">Account</Link>
             <SignOutButton />
           </div>
           <div className="w-full md:order-1 md:w-auto"><MainNavigation /></div>

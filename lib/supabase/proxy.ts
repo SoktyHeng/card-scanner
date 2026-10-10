@@ -26,7 +26,7 @@ export async function updateSession(request: NextRequest) {
   });
   const { data, error } = await supabase.auth.getClaims();
   const path = request.nextUrl.pathname;
-  const protectedPage = ["/dashboard", "/cards", "/scan"].some(
+  const protectedPage = ["/dashboard", "/cards", "/scan", "/account"].some(
     (prefix) => path === prefix || path.startsWith(`${prefix}/`),
   );
   if (protectedPage && (error || !data?.claims.sub)) {

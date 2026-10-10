@@ -2328,7 +2328,10 @@ remaining release checks. Use the latest dated verification in README.md as the
 current evidence; older phase snapshots are historical.
 
 Phase 10 has automated tooling implemented; physical-device, screen-reader,
-real-photo and hosted release checks remain pending. Phases 11–17 are planned.
+real-photo and hosted release checks remain pending. Phase 11 has password-flow
+code and hosted Auth/email acceptance checks completed for localhost. Deployed
+HTTPS verification remains part of the Phase 10 release checks. Phases 12–17
+are planned.
 Work sequentially, preserving the existing scanning/review/save flow.
 Keep the MVP completion criteria separate from these enhancements. Do not
 rebuild front/back scanning or duplicate warnings as new features.
@@ -2370,6 +2373,16 @@ Definition of done:
 - Do not mark unavailable hardware or unperformed checks as passed.
 
 ## Phase 11 — Password Recovery and Account Password Changes
+
+Status (2026-10-10): password request, explicit recovery verification, protected
+new-password and current-password change flows implemented. Local tests, lint,
+build and production HTTP checks pass. Hosted Gmail SMTP, recovery template,
+exact localhost redirect and 12-character minimum are configured and read back.
+Real email delivery, recovery/password update, new/old password checks, used-link
+denial and actual expiry denial passed with disposable accounts. The expiry test
+used a temporary 60-second setting; the original 3600 seconds was restored.
+Production deployment/domain verification remains a Phase 10 release requirement.
+See `docs/phase-11-passwords.md` for setup and acceptance evidence.
 
 Tasks:
 

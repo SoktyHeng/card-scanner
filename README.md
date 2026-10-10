@@ -93,7 +93,9 @@ No passwords, API keys, tokens or provider payloads are printed by the scripts.
 
 Phases 1–9 have implementation code. Front/back scanning and duplicate warnings
 already exist. Phase 10 has automated tooling implemented with release checks
-pending; Phases 11–17 are **planned**. Full production sign-off requires the checks
+pending. Phase 11 has password-flow code and hosted Auth/email checks completed
+against the localhost production app;
+Phases 12–17 are **planned**. Full production sign-off requires the checks
 in the latest verification above. Older verification snapshots below are historical.
 
 Implement these phases in order. [AGENTS.md](AGENTS.md#79-incremental-roadmap-after-phase-9)
@@ -151,16 +153,100 @@ real photographs, provider-retention review and hosted HTTPS/proxy/timeouts/edge
 limits/Auth settings. The user confirmed the app is not deployed yet. No live AI
 quota was consumed or hosted settings changed in this phase. Earlier synthetic
 AI and Supabase results remain historical evidence, not a real-photo sign-off.
-Computer/browser control was not used. Phases 11–17 remain unimplemented.
+Computer/browser control was not used. Phase 11 implementation is recorded below;
+Phases 12–17 remain unimplemented.
 
 ### Phase 11 — Password recovery and password changes
 
-Add Forgot password, recovery callback and protected new-password screens, plus
-an authenticated change-password action. Validate redirects and passwords, handle
-invalid/expired links safely and avoid revealing whether an email has an account.
-Configure production SMTP and templates; verify the complete recovery journey
-with disposable users. Follow the
-[Supabase password authentication guide](https://supabase.com/docs/guides/auth/passwords).
+**Status (2026-10-10): application flows and hosted Auth/email acceptance passed against localhost.**
+
+Login now offers Forgot password. `/forgot-password` requests a reset email with
+neutral account-existence responses. The supplied recovery email template opens
+`/auth/recovery`; the user presses Continue before the token is verified with
+Supabase, preventing GET-only mail scanners from consuming it. Successful recovery
+creates a verified session and a signed 15-minute user-bound HttpOnly cookie.
+`/auth/new-password` and its action require both; ordinary sign-in alone cannot
+bypass recovery verification. Redirects are fixed local routes, and invalid,
+expired, malformed or wrong-type links show controlled errors.
+
+The signed-in header links to `/account`, where changing a password requires its
+current value through explicit sign-in against the verified account and Supabase's
+`current_password` option. New passwords require
+12–128 characters and matching confirmation. Failed updates retain inputs for
+retry; confirmed updates clear them, clear recovery permission and request global
+sign-out. A sign-out failure reports that the password was already updated.
+Successful actions redirect to a password-updated page; incomplete global sign-out
+offers a retry there. Same-origin checks, session verification, protected Account
+routes and safe return
+URLs preserve the existing authentication protections. No schema migration or
+service-role client was added.
+
+Server-only `APP_SITE_URL` and `AUTH_RECOVERY_SECRET` are documented in `.env.example`;
+local ignored `.env.local` values were configured without displaying the secret.
+Production must use its exact HTTPS origin and a protected random secret shared
+across replicas. The local Supabase config now includes recovery redirect URLs,
+the email template and a 12-character password minimum. These local settings do
+not alter hosted Supabase. See [setup and acceptance guide](docs/phase-11-passwords.md)
+and [recovery email template](supabase/templates/recovery.html). The flow follows
+[Supabase password authentication](https://supabase.com/docs/guides/auth/passwords)
+and [email template documentation](https://supabase.com/docs/guides/auth/auth-email-templates).
+
+Verification: **144 automated tests** (74 general/UI/PostgreSQL/tooling + 70 server),
+lint, production build and local production HTTP checks passed on Node 24.21.0.
+New coverage includes neutral email responses, OTP/session verification, recovery
+grant tampering/expiry/wrong-user denial, confirmation/current-password validation,
+actual SDK request payloads with controlled HTTP responses, retries, cleanup and
+sign-out failures. HTTP checks verify anonymous Account/new-password denial,
+invalid recovery links, labeled reset forms and configured recovery-secret values
+absent from generated browser JavaScript. No computer/browser control was used.
+
+Read-only live page checks passed with the configured disposable user: Account
+access, ordinary-session rejection at the reset page, forged/wrong-user/expired
+grant denial and reset-form access with a locally test-issued matching grant.
+This did not consume an email token or change passwords. Repeat with:
+
+```bash
+APP_BASE_URL=http://localhost:3000 npm run verify:password -- --check-pages
+```
+
+An opt-in hosted password-mutation test is available:
+
+```bash
+npm run verify:password -- --change-disposable-password
+```
+
+It temporarily changes only `TEST_USER_A`'s disposable password, tests subsequent
+sign-in, then restores and verifies the original; it does not request reset emails.
+An ignored private recovery file protects against an unconfirmed restoration.
+Live verification on 2026-10-10 upgraded the disposable test password to meet the
+minimum and saved it privately in ignored `.env.local`. The hosted update endpoint
+accepted an incorrect `current_password`, so Account changes now explicitly
+reauthenticate against the server-verified user's email and check the returned
+user ID before updating. The repeat live check passed incorrect password denial,
+correct update, new-password sign-in, restoration and restored-password sign-in.
+The private backup was removed. All 144 tests, lint and production build pass.
+
+Hosted acceptance (2026-10-10): Gmail SMTP on port 587, the recovery subject/body,
+exact `http://localhost:3000/auth/recovery` redirect, a 12-character password minimum
+and a 30-email/hour Auth limit were applied and read back through the Management
+API. Actual signup and reset emails reached a dedicated disposable Gmail alias.
+The emailed link's GET did not consume it; Continue established recovery
+permission; the real password Server Action updated the password and signed out;
+new-password sign-in succeeded and the old password failed. Used-link denial and
+an actual expired-link check passed. Expiry was temporarily 60 seconds for that
+check, then restored to 3600 seconds and read back. Test passwords were restored,
+temporary token/session files removed, and a private disposable-account credential
+record retained under ignored `test-results/phase-11-hosted/` for future checks.
+SMTP and Management API secrets were absent from browser JavaScript. Existing
+authenticated-page and anonymous API checks passed again. No browser/computer
+control was used. The localhost server was restarted with the production build
+after the old server returned 404 for the reset route.
+
+This verifies hosted Auth with a local application. A deployed HTTPS origin and
+its recovery redirect still need verification once the app is deployed. Gmail is
+the testing sender; production sender/domain planning and the existing Phase 10
+physical-device, screen-reader, real-photo and deployment checks remain open.
+Docker's separate local Auth/email stack was not needed for these hosted checks.
 
 ### Phase 12 — Card filters and sorting
 
