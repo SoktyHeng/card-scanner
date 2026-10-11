@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { ScanLine, ShieldCheck } from "lucide-react";
-import { createClient } from "@/lib/supabase/server";
+import { getPageSession } from "@/lib/auth/session";
 import { safeRedirectPath } from "@/lib/auth/validation";
 import { SignInForm } from "@/components/auth/sign-in-form";
 import {
@@ -16,9 +16,7 @@ export default async function LoginPage({
   searchParams: Promise<{ next?: string }>;
 }) {
   const next = safeRedirectPath((await searchParams).next);
-  const supabase = await createClient();
-  const { data } = await supabase.auth.getUser();
-  if (data.user) redirect(next);
+  if (await getPageSession()) redirect(next);
   return (
     <main className="flex min-h-dvh items-center justify-center px-5 py-12">
       <div className="w-full max-w-md space-y-8">

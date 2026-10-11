@@ -50,6 +50,10 @@ test("scan → review → save → detail → edit → archive → restore → d
         if (method === "DELETE") for (const row of selected) rows.delete(row.id);
         return Response.json(selected);
       }
+      if (url.pathname === "/storage/v1/object/sign/card-images") {
+        const body = JSON.parse(String(init?.body)) as { paths: string[] };
+        return Response.json(body.paths.map(path => ({ path, error: null, signedURL: "/object/sign/card-images/temporary?token=test" })));
+      }
       if (url.pathname.includes("/object/sign/")) return Response.json({ signedURL: "/object/sign/card-images/temporary?token=test" });
       if (method === "DELETE") {
         const paths = (JSON.parse(String(init?.body)) as { prefixes: string[] }).prefixes;

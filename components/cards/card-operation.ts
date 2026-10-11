@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { invalidateWorkspaceCache } from "@/lib/cache/events";
 const responseSchema = z.discriminatedUnion("success", [
   z.strictObject({ success: z.literal(true) }),
   z.strictObject({ success: z.literal(false), error: z.strictObject({ code: z.string(), message: z.string().max(1000) }) }),
@@ -15,6 +16,11 @@ const messages: Record<string, string> = {
   DELETE_INCOMPLETE: "The image was removed, but the card record could not be deleted. Reload to check its status before retrying.",
 };
 export async function cardOperation(id: string, method: "PATCH" | "DELETE", body: unknown) {
+  // Even a failed/uncertain response can follow a partially completed mutation.
+  try { await performCardOperation(id, method, body); }
+  finally { invalidateWorkspaceCache(method === "DELETE"); }
+}
+async function performCardOperation(id: string, method: "PATCH" | "DELETE", body: unknown) {
   let response: Response;
   let data: unknown;
   try {

@@ -297,7 +297,12 @@ async function main() {
         const base = new URL(process.env.APP_BASE_URL).origin;
         const ownPage = await fetch(`${base}/cards/${id}`, { headers: { Cookie: sessionA.cookie() }, signal: AbortSignal.timeout(30000) });
         assert.equal(ownPage.status, 200, "Owner detail route failed");
-        assert.ok((await ownPage.text()).includes("Verified"));
+        assert.ok((await ownPage.text()).includes("Loading your card"));
+        const ownRead = await fetch(`${base}/api/workspace?type=detail&id=${id}`, { headers: { Cookie: sessionA.cookie() }, signal: AbortSignal.timeout(30000) });
+        assert.equal(ownRead.status, 200, "Owner cached-data endpoint failed");
+        const ownData = await ownRead.json();
+        assert.equal(ownData.owner, userA.id);
+        assert.equal(ownData.data.card.name, "Verified");
         for (const method of ["PATCH", "DELETE"]) {
           const denied = await fetch(`${base}/api/cards/${id}`, { method, headers: { Cookie: sessionB.cookie(), Origin: base, "Content-Type": "application/json" }, body: JSON.stringify(method === "DELETE" ? { confirmed: true } : { operation: "archive" }), signal: AbortSignal.timeout(30000) });
           assert.equal(denied.status, 404, "Cross-user mutation must be denied");

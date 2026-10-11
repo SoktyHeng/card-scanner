@@ -3,6 +3,7 @@ import { ScanLine } from "lucide-react";
 import { requireUser } from "@/lib/auth/session";
 import { SignOutButton } from "@/components/auth/sign-out-button";
 import { MainNavigation } from "@/components/layout/main-navigation";
+import { WorkspaceCacheProvider } from "@/components/cache/workspace-cache";
 export default async function ProtectedLayout({
   children,
 }: {
@@ -10,7 +11,7 @@ export default async function ProtectedLayout({
 }) {
   const { user } = await requireUser();
   return (
-    <div className="min-h-dvh">
+    <WorkspaceCacheProvider key={user.id} owner={user.id}><div className="min-h-dvh">
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:bg-background focus:p-4"
@@ -44,6 +45,6 @@ export default async function ProtectedLayout({
       >
         {children}
       </main>
-    </div>
+    </div></WorkspaceCacheProvider>
   );
 }

@@ -51,13 +51,19 @@ export async function getCardList(supabase: SupabaseClient<Database>, userId: st
   const result = await request.range((page - 1) * CARDS_PER_PAGE, page * CARDS_PER_PAGE);
   if (result.error) throw new Error("Unable to load your cards. Please try again.");
   const hasNext = result.data.length > CARDS_PER_PAGE;
-  const cards = await Promise.all(result.data.slice(0, CARDS_PER_PAGE).map(async card => {
-    let imageUrl: string | null = null;
-    if (card.original_image_path && ownsImagePath(userId, card.id, card.original_image_path)) {
-      const signed = await supabase.storage.from("card-images").createSignedUrl(card.original_image_path, SIGNED_IMAGE_SECONDS);
-      imageUrl = signed.data?.signedUrl ?? null;
+  const visibleCards = result.data.slice(0, CARDS_PER_PAGE);
+  const paths = visibleCards.flatMap(card => card.original_image_path && ownsImagePath(userId, card.id, card.original_image_path) ? [card.original_image_path] : []);
+  const imageUrls = new Map<string, string>();
+  if (paths.length) {
+    try {
+      const signed = await supabase.storage.from("card-images").createSignedUrls(paths, SIGNED_IMAGE_SECONDS);
+      if (!signed.error) for (const image of signed.data ?? []) {
+        if (image.path && paths.includes(image.path) && !image.error && image.signedUrl) imageUrls.set(image.path, image.signedUrl);
+      }
+    } catch {
+      // Keep the card list usable during a storage outage.
     }
-    return { ...card, imageUrl };
-  }));
+  }
+  const cards = visibleCards.map(card => ({ ...card, imageUrl: imageUrls.get(card.original_image_path ?? "") ?? null }));
   return { cards, hasNext };
 }

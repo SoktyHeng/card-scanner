@@ -2,8 +2,11 @@
 import Image from "next/image";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { useReusableImageUrl } from "@/components/cache/workspace-cache";
 
 export function FlippableCardImage({ frontUrl, backUrl }: { frontUrl: string | null; backUrl: string | null }) {
+  const frontImageUrl = useReusableImageUrl(frontUrl);
+  const backImageUrl = useReusableImageUrl(backUrl);
   const [side, setSide] = useState<"front" | "back">(frontUrl ? "front" : "back");
   const [failed, setFailed] = useState({ front: false, back: false });
   const canFlip = !!frontUrl && !!backUrl;
@@ -11,7 +14,7 @@ export function FlippableCardImage({ frontUrl, backUrl }: { frontUrl: string | n
   if (!frontUrl && !backUrl) return null;
   const faces = <div className={`card-flip-inner ${side === "back" && canFlip ? "card-flip-back" : ""}`}>
     {(["front", "back"] as const).map(face => {
-      const url = face === "front" ? frontUrl : backUrl;
+      const url = face === "front" ? frontImageUrl : backImageUrl;
       if (!url) return null;
       return <div key={face} aria-hidden={side !== face} className={`card-flip-face ${canFlip && face === "back" ? "card-flip-reverse" : ""}`}>
         {failed[face] ? <span className="flex h-full items-center justify-center p-4 text-sm">The {face} image could not be loaded.</span>

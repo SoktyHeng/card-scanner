@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { invalidateWorkspaceCache } from "@/lib/cache/events";
 import {
   extractionMessages,
   extractionResponseSchema,
@@ -258,7 +259,7 @@ export function useCardScanner() {
         error instanceof Error && Object.values(saveMessages).some(message => message === error.message)
           ? error.message : saveMessages.SAVE_STATUS_UNKNOWN });
       return null;
-    } finally { pendingSave.current = false; }
+    } finally { invalidateWorkspaceCache(); pendingSave.current = false; }
   }
 
   return { state, backImage, result, reviewedScan, duplicateWarning, cancelDuplicateSave, confirmReview, invalidateReview, selectImage, removeImage, extract, save };

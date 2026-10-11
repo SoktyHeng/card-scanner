@@ -4,7 +4,71 @@ Next.js 16 App Router, strict TypeScript, Tailwind 4, shadcn/ui and Supabase.
 Authentication, front/back capture and upload, AI extraction, mandatory review,
 private image storage, card management, keyword search and duplicate detection.
 
-## Latest verification — 2026-10-10
+## Browser-memory caching verification — 2026-10-11
+
+- Card lists (including search, filters, sorting, archive state and page) and
+  dashboard counts/recent cards are fresh for **45 seconds**. Card details are
+  fresh for **30 seconds**. Expired data can remain visible for up to 30 seconds
+  while a bounded background request loads its replacement.
+- Each mounted workspace owns a memory cache keyed by user and resource, capped
+  at 80 cached entries. It deduplicates pending reads and keeps signed image links
+  by owner/path until 30 seconds before expiry, renewing earlier when needed to
+  cover a data-cache lifetime. List, detail and edit image views share the links.
+  Nothing is persisted to localStorage, sessionStorage or IndexedDB.
+- Save, edit, archive, restore and delete invalidate cached data, including
+  uncertain mutation responses. Deletion also clears image links. Session/account
+  changes clear the cache and block old-account reads; token expiry clears it.
+  Other tabs receive invalidation signals without receiving card contents or
+  signed URLs. Restoring a document from browser back/forward cache clears it too.
+- `/api/workspace` verifies identity, validates queries and uses owner-scoped RLS
+  reads. HTTP responses stay `private, no-store`; server-side card-detail ownership
+  and 404 checks remain. The edit form still loads authoritative current data.
+- Node 24: **163 tests passed** (87 general/UI/PostgreSQL and 76 server), lint,
+  strict TypeScript and the default Turbopack production build passed. Tests cover
+  repeat-navigation cache hits, background refresh without a loading flash, key
+  separation, expiry, stale-response fencing, mutation/session clearing, bounded
+  entries and image-link reuse/renewal. The build runs in a temporary checkout so
+  it does not disturb an existing server.
+- Live production HTTP: owner list/dashboard/detail reads passed; a second
+  disposable account received 404 for the owner's detail and anonymous workspace
+  reads received 401. Existing production HTTP checks passed protected routes,
+  forged-session denial, mutation denial and server-secret browser-bundle checks.
+  The temporary production server was stopped and any temporary fixture removed.
+
+Repeat visits within the freshness window skip the data API. The first visit,
+hard reload and background refresh still depend on Supabase latency. Restart an
+already-running server and reload the browser to pick up the new route/provider.
+Physical-device and deployed-browser acceptance remain part of the release checks.
+
+## Navigation performance verification — 2026-10-11
+
+Page reads use Supabase signature-verified claims and React's request-scoped
+cache to share the session/client between a layout and its page. Account changes
+and card mutations retain authoritative `getUser()` checks. User data and
+sessions are never placed in a shared persistent cache. Card lists sign owned
+thumbnail paths in one storage request for the visible 24 cards; an unavailable
+image does not hide the card. Protected pages have an accessible loading boundary.
+
+- Node 24: all **152 tests passed** (78 general/UI/PostgreSQL and 74 server),
+  including real cryptographic forged-token rejection, invalid/expired claims,
+  owner-scoped batch signing, pagination and storage failure. Lint, TypeScript
+  and production build passed.
+- Authenticated HTTP checks against the running development server: Account
+  **40–63 ms**, Scan **31–45 ms**, Cards **1.215–3.891 seconds** including a first
+  request. Anonymous Account access redirected to login. These are a small local
+  sample, not production benchmarks or a guarantee for other network conditions.
+- Before the change, the same check observed Account at 3.922 seconds on its
+  first request and 186 ms warm, Scan at 1.667 seconds, and Cards at 1.940 seconds.
+  Cold compilation and changing network latency mean the samples cannot establish
+  a precise speedup. Card database/storage round trips still affect latency.
+
+For deployment, use an optimized production build (`npm run build`, then
+`npm start`) and place application hosting close to the Supabase region. Loading
+feedback makes navigation responsive while requests finish; it does not remove
+remote data latency. Physical-device, real-photo and deployed release checks
+remain pending as documented below and in the phase-specific verification.
+
+## Core verification snapshot — 2026-10-10
 
 All nine phases have implementation code. Automated checks, live two-account
 isolation, hosted database/storage auditing and synthetic live AI checks pass.

@@ -1341,6 +1341,15 @@ Use client components only for:
 
 Optimize card images before displaying large collections.
 
+The workspace uses bounded, per-user browser-memory caching for lists/dashboard
+(45 seconds), details (30 seconds), and private signed image links (with a
+30-second expiry margin). Preserve cache invalidation after all card mutations,
+session/account changes and deletion; fence pending responses from an older cache
+generation. Refresh expired views without hiding existing data during a bounded
+read, but never retain data after ownership/session invalidation. Keep all data
+API reads authenticated and owner-scoped under RLS, with private no-store HTTP
+responses. Do not persist card data in browser storage or a shared server cache.
+
 ---
 
 # 42. API Design
