@@ -1,6 +1,6 @@
 import "./fixtures/dom";
 import assert from "node:assert/strict";
-import { after, afterEach, before, mock, test } from "node:test";
+import { after, afterEach, before, beforeEach, mock, test } from "node:test";
 import { createElement } from "react";
 import {
   act,
@@ -23,6 +23,14 @@ import {
   releaseImagePreview,
   validateImageFile,
 } from "../lib/utils/image";
+
+function mockFetch(implementation: (url: string, init: RequestInit) => Promise<Response>) {
+  return mock.method(globalThis, "fetch", async (input: string | URL | Request, init?: RequestInit) => {
+    if (String(input) === "/api/drafts" && (!init?.method || init.method === "GET")) return Response.json({ drafts: [] });
+    return implementation(String(input), init ?? {});
+  });
+}
+beforeEach(() => { mockFetch(async () => { throw new Error("Unexpected request"); }); });
 
 const dom = new JSDOM("<!doctype html><html><body></body></html>", {
   url: "http://localhost",
@@ -172,7 +180,7 @@ test("rejects unsupported, spoofed, empty, oversized and corrupt image files", a
 
 test("camera/upload selection previews, replaces and removes without extraction requests", async () => {
   let requests = 0;
-  mock.method(globalThis, "fetch", async () => {
+  mockFetch( async () => {
     requests += 1;
     throw new Error("Unexpected network request");
   });
@@ -314,7 +322,7 @@ test("Extract is explicit, duplicate requests are prevented, and validated resul
   const pending = new Promise<Response>((resolve) => {
     finish = resolve;
   });
-  mock.method(globalThis, "fetch", async (url: string, init: RequestInit) => {
+  mockFetch( async (url: string, init: RequestInit) => {
     calls++;
     assert.equal(url, "/api/cards/extract");
     assert.equal(init.method, "POST");
@@ -361,7 +369,7 @@ test("Extract is explicit, duplicate requests are prevented, and validated resul
 
 test("save dialog cancel keeps the draft and makes no request; new edits are validated before saving", async () => {
   let requests = 0;
-  mock.method(globalThis, "fetch", async () => {
+  mockFetch( async () => {
     requests++;
     return Response.json({ success: true, data: businessCard() });
   });
@@ -398,7 +406,7 @@ test("save dialog cancel keeps the draft and makes no request; new edits are val
 });
 
 test("Phase 5 handoff retains original file, source text and extraction separately from corrections", async () => {
-  mock.method(globalThis, "fetch", async () => Response.json({ success: true, data: businessCard() }));
+  mockFetch( async () => Response.json({ success: true, data: businessCard() }));
   const original = file(png);
   const hook = renderHook(useCardScanner);
   await act(async () => { await hook.result.current.selectImage(original); });
@@ -423,7 +431,7 @@ test("save requires confirmation, blocks duplicate clicks, keeps the draft on fa
   let release!: (response: Response) => void;
   const pending = new Promise<Response>(resolve => { release = resolve; });
   const submissionIds: string[] = [];
-  mock.method(globalThis, "fetch", async (url: string, init: RequestInit) => {
+  mockFetch( async (url: string, init: RequestInit) => {
     if (url === "/api/cards/extract") return Response.json({ success: true, data: businessCard() });
     assert.equal(url, "/api/cards");
     saves++;
@@ -470,7 +478,7 @@ test("save requires confirmation, blocks duplicate clicks, keeps the draft on fa
 test("successful save returns a card destination and prevents another submission", async () => {
   const id = "00000000-0000-4000-8000-000000000003";
   let saves = 0;
-  mock.method(globalThis, "fetch", async (url: string) => {
+  mockFetch( async (url: string) => {
     if (url === "/api/cards/extract") return Response.json({ success: true, data: businessCard() });
     saves++;
     return Response.json({ success: true, id }, { status: 201 });
@@ -491,7 +499,7 @@ test("successful save returns a card destination and prevents another submission
 test("duplicate warning preserves image and draft, cancel sends nothing, and edited values recheck", async () => {
   const warning = { fingerprint: "a".repeat(64), matches: [{ id: "00000000-0000-4000-8000-000000000099", name: "Existing", company: null, archived: true, reasons: ["email"] }] };
   const sent: Array<{ submissionId: string; duplicateAcknowledgement?: unknown; reviewedData: { name: string } }> = [];
-  mock.method(globalThis, "fetch", async (url: string, init: RequestInit) => {
+  mockFetch( async (url: string, init: RequestInit) => {
     if (url === "/api/cards/extract") return Response.json({ success: true, data: businessCard() });
     const body = init.body as FormData;
     sent.push(JSON.parse(String(body.get("data"))));
@@ -531,7 +539,7 @@ test("save anyway sends explicit acknowledgement and guards repeated submissions
   const warning = { fingerprint: "b".repeat(64), matches: [{ id: "00000000-0000-4000-8000-000000000099", name: "Existing", company: null, archived: false, reasons: ["phone"] }] };
   let saves = 0;
   let finish!: (response: Response) => void;
-  mock.method(globalThis, "fetch", async (url: string, init: RequestInit) => {
+  mockFetch( async (url: string, init: RequestInit) => {
     if (url === "/api/cards/extract") return Response.json({ success: true, data: businessCard() });
     saves++;
     const data = JSON.parse(String((init.body as FormData).get("data")));
@@ -569,7 +577,7 @@ test("save anyway sends explicit acknowledgement and guards repeated submissions
 
 test("expired save session keeps reviewed values and original image while sign-in opens another tab", async () => {
   let saves = 0;
-  mock.method(globalThis, "fetch", async (url: string) => {
+  mockFetch( async (url: string) => {
     if (url === "/api/cards/extract") return Response.json({ success: true, data: businessCard() });
     saves++;
     return Response.json({ success: false, error: { code: "UNAUTHORIZED", message: "private auth diagnostic" } }, { status: 401 });
@@ -596,7 +604,7 @@ test("expired save session keeps reviewed values and original image while sign-i
 
 test("provider errors allow manual retry; empty validated results do not fabricate fields", async () => {
   let calls = 0;
-  mock.method(globalThis, "fetch", async () => {
+  mockFetch( async () => {
     calls++;
     return calls === 1
       ? Response.json(
@@ -633,7 +641,7 @@ test("provider errors allow manual retry; empty validated results do not fabrica
 
 test("invalid provider responses and network errors never become successful results", async () => {
   let calls = 0;
-  mock.method(globalThis, "fetch", async () => {
+  mockFetch( async () => {
     calls++;
     if (calls === 1)
       return Response.json({
@@ -660,7 +668,7 @@ test("invalid provider responses and network errors never become successful resu
 test("canceling or unmounting extraction aborts the request and ignores late responses", async () => {
   const signals: AbortSignal[] = [];
   const finish: Array<(response: Response) => void> = [];
-  mock.method(globalThis, "fetch", async (_url: string, init: RequestInit) => {
+  mockFetch( async (_url: string, init: RequestInit) => {
     signals.push(init.signal as AbortSignal);
     return new Promise<Response>((resolve) => {
       finish.push(resolve);
@@ -693,7 +701,7 @@ test("canceling or unmounting extraction aborts the request and ignores late res
 test("two-sided capture extracts and saves both originals after review, while back removal preserves the front", async () => {
   const source = combineCardSides({ front: businessCard(), back: emptyCard() });
   let saves = 0;
-  mock.method(globalThis, "fetch", async (url: string, init: RequestInit) => {
+  mockFetch( async (url: string, init: RequestInit) => {
     const form = init.body as FormData;
     assert.equal((form.get("image") as File).name, "front.png");
     assert.equal((form.get("backImage") as File).name, "back.png");
@@ -724,4 +732,92 @@ test("two-sided capture extracts and saves both originals after review, while ba
   assert.ok(!view.queryByLabelText("Name"));
   fireEvent.click(view.getByRole("button", { name: "Front (required)" }));
   assert.ok(view.getByText("front.png"));
+});
+
+test("restoring a draft keeps raw corrections and requires review without paid extraction or final save", async () => {
+  let requests = 0;
+  mockFetch(async () => { requests++; throw new Error("Unexpected request"); });
+  const hook = renderHook(() => useCardScanner());
+  const extraction = businessCard();
+  const review = editStandardField(createReviewDraft(extraction), "email", "unfinished@");
+  await act(async () => { await hook.result.current.restoreScan({ extraction, review, frontName: "recovered.png", backName: null }, file(png, "recovered.png"), null); });
+  assert.equal(hook.result.current.state.status, "review");
+  assert.equal(hook.result.current.reviewedScan, null);
+  assert.equal(hook.result.current.reviewDraft!.fields.email, "unfinished@");
+  assert.equal(requests, 0);
+  await act(async () => { assert.equal(await hook.result.current.save(), null); });
+  assert.equal(requests, 0);
+});
+
+test("recovery-enabled confirmed saving flushes current corrections and uses the draft save endpoint", async () => {
+  const draftId = "00000000-0000-4000-8000-000000000013";
+  let writes = 0, saves = 0, identity = draftId;
+  mockFetch(async (url, init) => {
+    if (url === "/api/cards/extract") return Response.json({ success: true, data: businessCard() });
+    if (url === "/api/drafts") {
+      writes++;
+      const data = JSON.parse(String((init.body as FormData).get("data"))); identity = data.id;
+      assert.equal(data.payload.review.fields.name, "Corrected before saving");
+      return Response.json({ meta: { id: identity, revision: writes, updatedAt: new Date().toISOString(), expiresAt: new Date(Date.now()+86400000).toISOString() } });
+    }
+    assert.equal(url, `/api/drafts/${identity}/save`);
+    assert.equal(JSON.parse(String(init.body)).reviewedData.name, "Corrected before saving");
+    saves++;
+    return Response.json({ success: false, error: { code: "UPLOAD_FAILED", message: "Failed" } }, { status: 503 });
+  });
+  const view = render(createElement(CardScanner));
+  fireEvent.change(view.getByLabelText("Upload card image"), { target: { files: [file(png)] } });
+  await view.findByText("card.png");
+  fireEvent.click(view.getByRole("button", { name: "Extract information" }));
+  await view.findByLabelText("Name");
+  fireEvent.change(view.getByLabelText("Name"), { target: { value: "Corrected before saving" } });
+  fireEvent.click(view.getByRole("button", { name: "Keep a recovery draft" }));
+  confirmSave(view);
+  await waitFor(() => assert.equal(saves, 1));
+  assert.equal(writes, 1);
+  assert.ok(view.getByDisplayValue("Corrected before saving"));
+  assert.ok(view.getByText("Recovery saved"));
+});
+
+test("switching interface language preserves the selected image, raw review edits, custom labels and confirmed save contract", async () => {
+  const { LanguageProvider, LanguageSelector } = await import("../components/i18n/language-provider");
+  const { translate } = await import("../lib/i18n/messages");
+  const source = businessCard();
+  source.extraFields = [{label: "Dashboard", key: "original_custom_key", value: "ខ្មែរ\nEnglish", confidence: 0.93}];
+  let requests = 0;
+  let saved: {reviewedData: {name: string; extraFields: typeof source.extraFields}; aiExtraction: typeof source} | undefined;
+  mockFetch(async (url, init) => {
+    requests++;
+    if (url === "/api/cards/extract") return Response.json({success: true, data: source});
+    const form = init.body as FormData;
+    saved = JSON.parse(String(form.get("data")));
+    assert.deepEqual(new Uint8Array(await (form.get("image") as File).arrayBuffer()), png);
+    return Response.json({success: false, error: {code: "INSERT_FAILED", message: "controlled"}}, {status: 503});
+  });
+  const view = render(createElement(LanguageProvider, null, createElement(LanguageSelector), createElement(CardScanner)));
+  fireEvent.change(view.getByLabelText("Upload card image"), {target: {files: [file(png)]}});
+  await view.findByText("card.png");
+  const preview = view.getByAltText("Selected card image").getAttribute("src");
+  fireEvent.click(view.getByRole("button", {name: "Extract information"}));
+  const name = await view.findByLabelText("Name") as HTMLInputElement;
+  fireEvent.change(name, {target: {value: "  សុខា User  "}});
+  const selector = view.getByLabelText("Language");
+  const before = requests;
+  fireEvent.change(selector, {target: {value: "km"}});
+  assert.equal(requests, before);
+  assert.equal(view.getByLabelText("ឈ្មោះ"), name);
+  assert.equal(name.value, "  សុខា User  ");
+  assert.equal(view.getByAltText(translate("km", "Selected card image")).getAttribute("src"), preview);
+  assert.equal((view.getByDisplayValue("Dashboard") as HTMLInputElement).value, "Dashboard");
+  fireEvent.click(view.getByRole("button", {name: translate("km", "Save card")}));
+  assert.ok(view.getByRole("dialog", {name: translate("km", "Save this card?")}));
+  // Switching while confirmation is open also preserves the pending reviewed data.
+  fireEvent.change(selector, {target: {value: "en"}});
+  fireEvent.click(view.getByRole("button", {name: "Confirm"}));
+  await view.findByRole("alert");
+  assert.equal(saved?.reviewedData.name, "សុខា User");
+  assert.equal(saved?.reviewedData.extraFields[0].label, "Dashboard");
+  assert.equal(saved?.reviewedData.extraFields[0].key, "original_custom_key");
+  assert.equal(saved?.reviewedData.extraFields[0].value, "ខ្មែរ\nEnglish");
+  assert.deepEqual(saved?.aiExtraction, source);
 });

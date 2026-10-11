@@ -2340,7 +2340,10 @@ Phase 10 has automated tooling implemented; physical-device, screen-reader,
 real-photo and hosted release checks remain pending. Phase 11 has password-flow
 code and hosted Auth/email acceptance checks completed for localhost. Deployed
 HTTPS verification remains part of the Phase 10 release checks. Phase 12 filters
-and sorting are implemented and validated. Phases 13–17 are planned.
+and sorting and Phase 13 secure draft recovery are implemented and validated.
+Phase 13 scheduled maintenance activation remains pending. Phase 14 interface
+localization is implemented and automatically validated; Khmer wording review
+and real screen-reader acceptance remain pending. Phases 15–16 are planned.
 Work sequentially, preserving the existing scanning/review/save flow.
 Keep the MVP completion criteria separate from these enhancements. Do not
 rebuild front/back scanning or duplicate warnings as new features.
@@ -2434,27 +2437,20 @@ Definition of done:
 - Users can combine search, filters and sorting, share their own list URL, and
   paginate consistently without exposing another user's records.
 
-## Phase 13 — CSV and vCard Export
+## Phase 13 — Secure Draft Recovery
 
-Tasks:
-
-1. Export selected cards or all cards matching the current search and filters,
-   making archive inclusion explicit and supporting results beyond one page.
-2. Produce UTF-8 CSV with standard columns and a documented representation of
-   custom-field arrays that preserves labels, keys, values and confidence.
-3. Produce compatible vCard contact files for available contact fields. Preserve
-   unsupported custom information in notes or clearly explain export limitations.
-4. Escape CSV formula-like values and vCard separators/newlines safely; verify
-   Khmer, multiline values, missing fields and import into representative tools.
-5. Authenticate exports, enforce ownership, bound export sizes and avoid logging
-   card contents. Exclude secrets, storage paths and signed image URLs.
-
-Definition of done:
-
-- Users can import exported data into spreadsheets and phone contacts; CSV
-  preserves custom fields, and cross-user export attempts are denied.
-
-## Phase 14 — Secure Draft Recovery
+Status (2026-10-11): implemented; migration applied and hosted two-user recovery,
+consumption/discard and idempotent save checks passed. Drafts opt in, expire after
+24 hours, use owner RLS/private storage, preserve raw corrections and require
+review again on resume. Revisions and five-minute save leases protect concurrent
+writes and retries. Never replace this with browser persistence of card contents.
+`npm run verify:drafts` repeats synthetic live checks and cleans its own fixtures.
+`npm run cleanup:drafts` provides bounded server-only maintenance. Activating an
+hourly scheduler and supplying its maintenance key remain operational work;
+owner sweeps alone do not guarantee physical deletion for absent users. Preserve
+the cleanup ledger until Storage deletion succeeds. See README for retention,
+image-link caching and interrupted-write limitations. Full physical-device and
+hosted release acceptance still belong to Phase 10.
 
 Tasks:
 
@@ -2474,7 +2470,7 @@ Definition of done:
 - A user can resume an opted-in draft after reload; other users cannot access it,
   and resuming never silently creates a final card or triggers paid extraction.
 
-## Phase 15 — Khmer and English Interface
+## Phase 14 — Khmer and English Interface
 
 Tasks:
 
@@ -2493,7 +2489,19 @@ Definition of done:
 - The complete user journey works in either language without losing data or
   changing extraction semantics.
 
-## Phase 16 — Consistent Cambodia Dates and Daily Counts
+Implementation evidence (2026-10-12): the global English/Khmer selector persists
+`card-scanner-language` as a nonsensitive cookie. Server rendering reads it and
+client switching updates document language without refreshing or remounting
+forms. UI-owned messages use `lib/i18n/km.json` with English fallback; never pass
+card contents or custom labels into translation. Noto Sans Khmer is bundled
+locally. Display formatting uses locale-aware Intl while retaining the existing
+time-zone policies until Phase 15. Lint, strict TypeScript, production build,
+184 tests and production HTTP/security checks passed. Computer Use checked
+keyboard switching, the accessibility tree, desktop Khmer rendering and wrapping
+at 320px. The user agreed to review Khmer wording; that review and actual
+screen-reader/mobile-device acceptance remain pending.
+
+## Phase 15 — Consistent Cambodia Dates and Daily Counts
 
 Tasks:
 
@@ -2511,7 +2519,7 @@ Definition of done:
 - Dashboard counts and date filters agree with displayed Cambodia dates,
   regardless of the browser or hosting machine's time zone.
 
-## Phase 17 — Tags, Notes and Favorites
+## Phase 16 — Tags, Notes and Favorites
 
 Tasks:
 
@@ -2522,7 +2530,7 @@ Tasks:
 3. Allow adding/removing tags, editing notes and toggling favorites on cards;
    add tag/favorite filters without losing existing search and sort state.
 4. Define archive, restore and delete behavior, clean relations on permanent
-   deletion, and preserve notes/tags in CSV exports with documented mapping.
+   deletion, and preserve notes/tags when archiving or restoring cards.
 5. Test duplicate tag names, concurrent edits, inaccessible cards and cross-user
    relation creation/read/update/delete attempts.
 

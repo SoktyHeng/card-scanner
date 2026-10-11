@@ -54,6 +54,16 @@ async function main() {
     assert.ok(html.includes(text));
   console.log("PASS: Login renders labelled credential fields");
   assert.ok(html.includes("Forgot password?"));
+  for (const language of ["en", "km", "invalid"]) {
+    const localized = await fetch(base + "/login", { headers: { Cookie: `card-scanner-language=${language}` } });
+    assert.equal(localized.status, 200);
+    const page = await localized.text();
+    const expected = language === "km" ? "km" : "en";
+    assert.ok(page.includes(`<html lang="${expected}"`));
+    assert.ok(page.includes(expected === "km" ? "សូមស្វាគមន៍មកវិញ" : "Welcome back"));
+    assert.ok(page.includes('id="interface-language"'));
+    console.log(`PASS: Server-rendered interface language ${language} -> ${expected}`);
+  }
   const forgot = await fetch(base + "/forgot-password");
   assert.equal(forgot.status, 200);
   assert.match(forgot.headers.get("cache-control") ?? "", /no-store/);

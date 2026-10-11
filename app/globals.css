@@ -1,14 +1,16 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "@fontsource/noto-sans-khmer/400.css";
+@import "@fontsource/noto-sans-khmer/600.css";
 
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: ui-sans-serif, system-ui, sans-serif;
+  --font-sans: ui-sans-serif, system-ui, "Noto Sans Khmer", sans-serif;
   --font-mono: ui-monospace, monospace;
-  --font-heading: ui-sans-serif, system-ui, sans-serif;
+  --font-heading: ui-sans-serif, system-ui, "Noto Sans Khmer", sans-serif;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -163,3 +165,6 @@
     scroll-behavior: auto !important;
   }
 }
+
+html[lang="km"] { font-family: "Noto Sans Khmer", ui-sans-serif, system-ui, sans-serif; line-height: 1.8; }
+html[lang="km"] button, html[lang="km"] input, html[lang="km"] select, html[lang="km"] textarea { font-family: inherit; }

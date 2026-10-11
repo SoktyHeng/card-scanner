@@ -153,14 +153,16 @@ rendering, set `VERIFY_KHMER_FONT_FILE` to an installed Khmer font. On this Mac,
 verification used `/System/Library/Fonts/Supplemental/Khmer Sangam MN.ttf`.
 No passwords, API keys, tokens or provider payloads are printed by the scripts.
 
-## Incremental roadmap — Phases 10–17
+## Incremental roadmap — Phases 10–16
 
 Phases 1–9 have implementation code. Front/back scanning and duplicate warnings
 already exist. Phase 10 has automated tooling implemented with release checks
 pending. Phase 11 has password-flow code and hosted Auth/email checks completed
 against the localhost production app;
-Phase 12 filters/sorting are implemented and validated; Phases 13–17 are
-**planned**. Full production sign-off requires the checks
+Phases 12 filters/sorting and 13 secure draft recovery are implemented and
+validated. Phase 14 localization is implemented, with human Khmer and real
+screen-reader acceptance pending; Phases 15–16 are **planned**. Phase 13 scheduled cleanup still needs
+a trusted scheduler and server-only maintenance credentials. Full production sign-off requires the checks
 in the latest verification above. Older verification snapshots below are historical.
 
 Implement these phases in order. [AGENTS.md](AGENTS.md#79-incremental-roadmap-after-phase-9)
@@ -173,11 +175,10 @@ version any migrations, and update this README with dated verification evidence.
 | 10 | Release validation and automated checks | Physical Android/iOS camera and mobile-browser journeys, keyboard/screen-reader behavior, representative real-photo extraction and deployed security settings are verified; CI runs lint, tests and build. |
 | 11 | Password recovery and password changes | Users can recover access by email and change passwords securely; SMTP, redirects and expired-link handling are verified. |
 | 12 | Card filters and sorting | Keyword search combines with card type, company, date and archive filters; newest/oldest and name sorting persist through URLs and pagination. |
-| 13 | CSV and vCard export | Selected cards or all matching results export safely to spreadsheets and contacts; CSV preserves custom fields and exports enforce ownership. |
-| 14 | Secure draft recovery | Users can opt in to resume images and corrected review fields after reload, with private owner-scoped storage, retention and discard controls. |
-| 15 | Khmer and English interface | Language selection covers navigation, forms, messages and accessibility announcements; card contents remain as written. |
-| 16 | Consistent Cambodia dates | Dashboard daily counts, displayed dates and date filters use Asia/Phnom_Penh consistently while database timestamps remain UTC. |
-| 17 | Tags, notes and favorites | Users can organize private cards with tags/favorites, write notes and filter by organization metadata without changing original AI data. |
+| 13 | Secure draft recovery | Users can opt in to resume images and corrected review fields after reload, with private owner-scoped storage, retention and discard controls. |
+| 14 | Khmer and English interface | Language selection covers navigation, forms, messages and accessibility announcements; card contents remain as written. |
+| 15 | Consistent Cambodia dates | Dashboard daily counts, displayed dates and date filters use Asia/Phnom_Penh consistently while database timestamps remain UTC. |
+| 16 | Tags, notes and favorites | Users can organize private cards with tags/favorites, write notes and filter by organization metadata without changing original AI data. |
 
 ### Phase 10 — Release validation and automated checks
 
@@ -219,7 +220,7 @@ limits/Auth settings. The user confirmed the app is not deployed yet. No live AI
 quota was consumed or hosted settings changed in this phase. Earlier synthetic
 AI and Supabase results remain historical evidence, not a real-photo sign-off.
 Computer/browser control was not used. Phase 11 implementation is recorded below;
-Phases 12–17 remain unimplemented.
+Phases 12–16 remain unimplemented.
 
 ### Phase 11 — Password recovery and password changes
 
@@ -345,44 +346,126 @@ server was stopped afterward; no browser/computer control was used. No schema mi
 additional infrastructure or privileged/service-role client was required.
 Existing Phase 10 deployment and physical-device release checks remain open.
 
-### Phase 13 — CSV and vCard export
+### Phase 13 — Secure draft recovery
 
-Export selected cards or the full matching collection, including results beyond
-one page, with archive inclusion clearly indicated. CSV must preserve custom
-field arrays and support Khmer/multiline content; vCard maps available contact
-fields with documented handling of additional information. Test imports, escaping
-and CSV formula protection. Export only authenticated owner data, bound size,
-and exclude secrets, image paths and signed URLs.
+**Status (2026-10-11): implementation and hosted user-flow checks complete;
+scheduled cleanup activation pending.**
 
-### Phase 14 — Secure draft recovery
+On Scan, select **Keep a recovery draft** to opt in. Images, source extraction and
+raw corrected form values are kept privately in Supabase, separate from final
+cards. Recovery supports both sides, Khmer, multiline/custom values and incomplete
+edits such as an unfinished email. Nothing is stored in localStorage, sessionStorage
+or IndexedDB. Corrections debounce for 1.5 seconds and writes are serialized;
+choose **Save draft now**, or wait for **Recovery saved**, before leaving. Edits
+made just before navigation, refresh, device shutdown or a failed request may not
+reach the server. Browser unload warnings are best effort, especially on phones.
 
-Offer opt-in server-side draft persistence for images, AI source and corrected
-review fields. Use owner RLS and private storage, separate drafts from final cards,
-and provide resume/discard, retention and cleanup. Avoid sensitive localStorage.
-Verify interrupted writes, expiration, concurrent tabs and save retries. Restoring
-must not automatically run extraction or bypass final review/duplicate warnings.
+Use **Resume draft** to restore originals and corrections. Replacing a current
+scan asks before discarding its unsaved edits. Resume performs no AI extraction
+and creates no card; review and the existing confirmation/duplicate warning are
+still required. **Discard recovery copy** deletes the saved recovery copy and
+keeps the current in-memory scan. Refresh the list to see drafts saved elsewhere.
+Five active drafts per user and twelve reserved image versions per draft bound
+storage. Unused image versions become eligible for cleanup after ten minutes.
 
-### Phase 15 — Khmer and English interface
+Drafts expire **24 hours after creation**, without extending on edits. APIs reject
+expired restoration and issue image links lasting 60 seconds. Supabase may serve
+previously issued/cached image responses briefly after deletion; immediate
+revocation of every issued link is not guaranteed. Interrupted uploads remain in
+an asset ledger so cleanup can retry without losing track of originals. Draft and
+asset records are removed only after Storage deletion succeeds. Listing/writing
+recovery drafts sweeps the owner's expired or consumed copies; explicit discard
+and successful final save also clean their originals. Failed cleanup retains the
+ledger for retry. Database triggers prevent deleting metadata before its images.
 
-Add language selection with a persistent nonsensitive preference and shared
-translation catalog. Translate the complete interface, including errors and
-screen-reader announcements, use readable Khmer fonts and appropriate document
-language, and review translations with a Khmer speaker. Keep extracted names,
-labels, values and schema keys unchanged when switching languages.
+For users who do not return, configure an **hourly trusted server job** to run:
 
-### Phase 16 — Consistent Cambodia dates
+```bash
+npm run cleanup:drafts
+```
+
+Supply `NEXT_PUBLIC_SUPABASE_URL` and a server-only `SUPABASE_SERVICE_ROLE_KEY`
+through the scheduler's secret store. This command examines at most 100 expired or
+terminal drafts per invocation, validates each owner/path, respects active save
+leases and removes Storage objects before metadata. Run additional batches if a
+backlog develops. The maintenance key is used only by this command; user-facing
+routes use the authenticated user's JWT and RLS. It is absent locally, and no
+hosted scheduler has been configured. Until that job is activated, absent users'
+expired copies can remain physically stored beyond 24 hours until an owner sweep
+or maintenance run. An hourly job with no backlog normally removes expired copies
+within the next hour, plus any retry delay. Account deletion should clean its draft
+assets first because the cleanup guards deliberately prevent orphaning images.
+
+The migration is versioned at
+`supabase/migrations/20261011030000_secure_scan_drafts.sql` and has been applied to
+the configured hosted project. `scan_drafts` and `scan_draft_assets` use owner RLS;
+`scan-drafts` is a private 10 MB-per-image bucket. API input, image bytes and
+restored payloads are validated; mutations require same-origin requests. The scan
+pins its owner so an account switch cannot silently persist the previous account's
+form. Revision checks reject concurrent edits while keeping local values. If a
+write response is lost, refresh/resume its saved copy to reconcile before writing
+again. Final saves claim a five-minute lease and derive a stable card ID from the
+owner/draft pair; a confirmed save can be retried even after draft cleanup.
+
+Verification (Node 24): **180 tests passed**, lint, strict TypeScript and the
+default Turbopack production build passed. Tests cover PostgreSQL RLS/storage
+policies, revisions, quotas, lease transitions, raw-form recovery, opt-in behavior,
+image reuse, session/account changes, interrupted writes and cleanup failures.
+Production HTTP checks passed protected routes, anonymous draft denial and
+server-secret browser-bundle checks. `npm run verify:drafts` passed with two
+confirmed disposable accounts against hosted Supabase: cross-owner read/storage
+and deletion denial, two-sided restoration, Khmer/corrected/incomplete values,
+stale revisions, final-save idempotency, consumption and explicit discard. It uses
+synthetic fixtures without calling AI, then removes its cards, images and drafts.
+The temporary production verification server was stopped.
+
+### Phase 14 — Khmer and English interface
+
+Implemented (2026-10-12). Use **Language / ភាសា** at the top of any page to
+choose English or Khmer. The nonsensitive `card-scanner-language` cookie lasts
+one year; invalid or absent values default to English. Switching updates the
+interface and document language immediately without refreshing or remounting
+forms, so selected images and unsaved review edits stay intact.
+
+Navigation, authentication/password forms, scanning/recovery, review dialogs,
+search, management, errors and accessibility messages use a shared catalog in
+[lib/i18n/km.json](lib/i18n/km.json). English source strings are catalog keys;
+missing translations fall back to English. Dynamic messages use named parameters
+so user data remains literal. Extracted names, custom labels/values, original
+text, AI results, field keys and save payloads are preserved. Noto Sans Khmer is
+bundled locally; no external font request is needed. Dates and numbers use the
+selected locale. Existing time-zone policies, including the dashboard's UTC-day
+count, remain until Phase 15.
+
+Verification (Node 24): **184 tests passed**, lint, strict TypeScript and the
+production build passed. Tests cover catalog/error completeness, parameter
+parity, fallback, cookie/document language, date formatting, image/edit retention,
+and switching with an open confirmation dialog without altering saved data.
+Production HTTP checks verified both languages render from their cookie, invalid
+preferences fall back to English, protected APIs reject anonymous users, and
+server secrets are absent from browser JavaScript. Computer Use checked keyboard
+switching, translated accessibility names and desktop/320px Khmer scanner layouts.
+
+**Pending acceptance:** the user agreed to review Khmer wording. Choose Khmer
+and walk through login, scan, review/save, search, edit and archive dialogs; report
+any unclear wording using its English catalog key. Test keyboard navigation and
+actual VoiceOver/TalkBack reading, focus return and status announcements in both
+languages on a physical device. Accessibility-tree checks do not replace a real
+screen-reader test. No hosted schema or AI-provider changes are required.
+
+### Phase 15 — Consistent Cambodia dates
 
 Replace the dashboard's current UTC-day count with Asia/Phnom_Penh day boundaries
 and use the same policy for displayed dates and date filters. Retain UTC storage
 and translate local boundaries to UTC query ranges. Test local midnight and
 month/year transitions independent of browser/server time zones.
 
-### Phase 17 — Tags, notes and favorites
+### Phase 16 — Tags, notes and favorites
 
 Use owner-protected tag and card/tag tables, user-authored notes and a favorite
 flag. Add editing and tag/favorite filters while preserving search/sort state.
 Keep notes separate from OCR/AI source, define archive/delete behavior and include
-organization metadata in CSV exports. Test relation ownership, concurrent updates
+organization metadata through archive, restore and delete. Test relation ownership, concurrent updates
 and cross-user denial. This phase follows the core usability improvements.
 
 RAG, chatbots, embeddings and additional backend infrastructure remain outside

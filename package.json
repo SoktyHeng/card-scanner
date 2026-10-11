@@ -16,9 +16,12 @@
     "verify:ai": "node --conditions=react-server --import tsx scripts/verify-ai.ts",
     "evaluate:ai": "node --conditions=react-server --import tsx scripts/evaluate-ai.ts",
     "verify:deployment": "tsx scripts/verify-deployment.ts",
-    "verify:password": "node --conditions=react-server --import tsx scripts/verify-password.ts"
+    "verify:password": "node --conditions=react-server --import tsx scripts/verify-password.ts",
+    "cleanup:drafts": "node --conditions=react-server --import tsx scripts/cleanup-drafts.ts",
+    "verify:drafts": "node --conditions=react-server --import tsx scripts/verify-drafts.ts"
   },
   "dependencies": {
+    "@fontsource/noto-sans-khmer": "5.3.0",
     "@supabase/ssr": "0.12.7",
     "@supabase/supabase-js": "2.117.2",
     "class-variance-authority": "0.7.1",

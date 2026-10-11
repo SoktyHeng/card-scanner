@@ -8,8 +8,9 @@ import {
 } from "@/lib/ai/card-schema";
 import type { ExtractedCard } from "@/lib/ai/types";
 import { EXTRACTION_CLIENT_TIMEOUT_MS } from "@/lib/ai/timeouts";
-import { prepareReviewedScan, type ReviewedCard, type ReviewedScan } from "@/lib/cards/review";
+import { prepareReviewedScan, type ReviewDraft, type ReviewedCard, type ReviewedScan } from "@/lib/cards/review";
 import { createSubmissionId, saveMessages, saveResponseSchema } from "@/lib/cards/save-schema";
+import { draftMessages, type DraftPayload } from "@/lib/drafts/schema";
 import type { DuplicateWarning } from "@/lib/cards/duplicates";
 import {
   createImagePreview,
@@ -43,6 +44,8 @@ export function useCardScanner() {
   const pendingSelection = useRef<AbortController | null>(null);
   const pendingExtraction = useRef<AbortController | null>(null);
   const [result, setResult] = useState<ExtractedCard | null>(null);
+  const [reviewDraft, setReviewDraft] = useState<ReviewDraft | null>(null);
+  const [reviewGeneration, setReviewGeneration] = useState(0);
   const [reviewedScan, setReviewedScan] = useState<ReviewedScan | null>(null);
   const [duplicateWarning, setDuplicateWarning] = useState<DuplicateWarning | null>(null);
   const submissionId = useRef<string | null>(null);
@@ -96,6 +99,7 @@ export function useCardScanner() {
         activeImage.current = image;
       }
       setResult(null);
+      setReviewDraft(null);
       setReviewedScan(null);
       setDuplicateWarning(null);
       submissionId.current = null;
@@ -126,6 +130,7 @@ export function useCardScanner() {
     pendingExtraction.current?.abort();
     pendingExtraction.current = null;
     setResult(null);
+    setReviewDraft(null);
     setReviewedScan(null);
     setDuplicateWarning(null);
     submissionId.current = null;
@@ -155,6 +160,7 @@ export function useCardScanner() {
       AbortSignal.timeout(EXTRACTION_CLIENT_TIMEOUT_MS),
     ]);
     setResult(null);
+    setReviewDraft(null);
     setReviewedScan(null);
     setDuplicateWarning(null);
     submissionId.current = null;
@@ -207,8 +213,9 @@ export function useCardScanner() {
     return scan;
   }
 
-  function invalidateReview() {
+  function invalidateReview(next?: ReviewDraft) {
     if (pendingSave.current || savedId.current) return;
+    if (next) setReviewDraft(next);
     setReviewedScan(null);
     setDuplicateWarning(null);
     submissionId.current = null;
@@ -222,7 +229,7 @@ export function useCardScanner() {
     setState({ status: "reviewed", image: activeImage.current, message: null });
   }
 
-  async function save(saveAnyway = false, data?: ReviewedCard): Promise<string | null> {
+  async function save(saveAnyway = false, data?: ReviewedCard, persist?: (data: ReviewedCard, warning: DuplicateWarning | null) => Promise<Response>): Promise<string | null> {
     const scan = data && (!reviewedScan || JSON.stringify(data) !== JSON.stringify(reviewedScan.reviewedData))
       ? confirmReview(data) : reviewedScan;
     if (!scan || !activeImage.current || !submissionId.current || pendingSave.current || savedId.current || pendingSelection.current || pendingExtraction.current) return null;
@@ -239,7 +246,7 @@ export function useCardScanner() {
         aiExtraction: scan.aiExtraction, reviewedData: scan.reviewedData,
         ...(saveAnyway && duplicateWarning ? { duplicateAcknowledgement: { confirmed: true, fingerprint: duplicateWarning.fingerprint } } : {}),
       }));
-      const response = await fetch("/api/cards", { method: "POST", body: form, signal: AbortSignal.timeout(90_000) });
+      const response = persist ? await persist(scan.reviewedData, saveAnyway ? duplicateWarning : null) : await fetch("/api/cards", { method: "POST", body: form, signal: AbortSignal.timeout(90_000) });
       const parsed = saveResponseSchema.safeParse(await response.json());
       if (!parsed.success) throw new Error(saveMessages.SAVE_STATUS_UNKNOWN);
       if (!parsed.data.success && parsed.data.error.code === "POSSIBLE_DUPLICATES" && parsed.data.duplicateWarning) {
@@ -256,11 +263,28 @@ export function useCardScanner() {
       return parsed.data.id;
     } catch (error: unknown) {
       if (mounted.current) setState({ status: "save_error", image, message:
-        error instanceof Error && Object.values(saveMessages).some(message => message === error.message)
+        error instanceof Error && [...Object.values(saveMessages), ...Object.values(draftMessages)].some(message => message === error.message)
           ? error.message : saveMessages.SAVE_STATUS_UNKNOWN });
       return null;
     } finally { invalidateWorkspaceCache(); pendingSave.current = false; }
   }
 
-  return { state, backImage, result, reviewedScan, duplicateWarning, cancelDuplicateSave, confirmReview, invalidateReview, selectImage, removeImage, extract, save };
+  async function restoreScan(payload: DraftPayload, front: File | null, back: File | null) {
+    if (pendingSave.current || pendingExtraction.current || pendingSelection.current || savedId.current) throw new Error(draftMessages.BUSY);
+    const images: ImageSelection[] = [];
+    try {
+      const restoredFront = front ? await createImagePreview(front) : null;
+      if (restoredFront) images.push(restoredFront);
+      const restoredBack = back ? await createImagePreview(back) : null;
+      if (restoredBack) images.push(restoredBack);
+      if (!mounted.current) throw new Error(draftMessages.UNAVAILABLE);
+      releaseImagePreview(activeImage.current); releaseImagePreview(activeBackImage.current);
+      activeImage.current = restoredFront; activeBackImage.current = restoredBack;
+      setBackImage(restoredBack); setResult(payload.extraction); setReviewDraft(payload.review);
+      setReviewGeneration(value => value + 1); setReviewedScan(null); setDuplicateWarning(null); submissionId.current = null;
+      setState(restoredFront ? { status: payload.extraction ? "review" : "image_selected", image: restoredFront, message: null } : { status: "idle", image: null, message: null });
+    } catch (error) { images.forEach(releaseImagePreview); throw error; }
+  }
+
+  return { state, backImage, result, reviewDraft, reviewGeneration, restoreScan, reviewedScan, duplicateWarning, cancelDuplicateSave, confirmReview, invalidateReview, selectImage, removeImage, extract, save };
 }
