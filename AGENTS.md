@@ -2343,7 +2343,8 @@ HTTPS verification remains part of the Phase 10 release checks. Phase 12 filters
 and sorting and Phase 13 secure draft recovery are implemented and validated.
 Phase 13 scheduled maintenance activation remains pending. Phase 14 interface
 localization is implemented and automatically validated; Khmer wording review
-and real screen-reader acceptance remain pending. Phases 15–16 are planned.
+and real screen-reader acceptance remain pending. Phase 15 Cambodia dates and
+daily counts are implemented and validated. Phase 16 is planned.
 Work sequentially, preserving the existing scanning/review/save flow.
 Keep the MVP completion criteria separate from these enhancements. Do not
 rebuild front/back scanning or duplicate warnings as new features.
@@ -2495,7 +2496,8 @@ client switching updates document language without refreshing or remounting
 forms. UI-owned messages use `lib/i18n/km.json` with English fallback; never pass
 card contents or custom labels into translation. Noto Sans Khmer is bundled
 locally. Display formatting uses locale-aware Intl while retaining the existing
-time-zone policies until Phase 15. Lint, strict TypeScript, production build,
+time-zone policies at this verification point; Phase 15 below now centralizes
+Cambodia time. Lint, strict TypeScript, production build,
 184 tests and production HTTP/security checks passed. Computer Use checked
 keyboard switching, the accessibility tree, desktop Khmer rendering and wrapping
 at 320px. The user agreed to review Khmer wording; that review and actual
@@ -2518,6 +2520,19 @@ Definition of done:
 
 - Dashboard counts and date filters agree with displayed Cambodia dates,
   regardless of the browser or hosting machine's time zone.
+
+Implementation evidence (2026-10-12): `lib/utils/cambodia-time.ts` owns the
+Asia/Phnom_Penh policy, local calendar-day boundaries and locale-aware display
+formatting. Dashboard counts use owner-scoped `created_at >= start` and
+`created_at < next midnight` queries; date filters share those boundaries.
+Scanned today includes archived scans, preserving the existing count semantics.
+Dashboard recent dates, list/detail dates and draft expiry displays all use the
+same zone, with English/Khmer time-zone labels. UTC storage is unchanged.
+188 tests, lint, strict TypeScript and the production build passed. Tests cover
+both sides of local midnight, month/year rollover, leap days, inclusive filters,
+next-day exclusion, archived/other-owner records and four host time zones.
+Production HTTP/authentication and browser-secret checks also passed. No database
+migration is required. Existing browser-cache freshness limits still apply.
 
 ## Phase 16 — Tags, Notes and Favorites
 

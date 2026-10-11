@@ -33,6 +33,7 @@ export function CachedCards({ params }: {
       <Link href={cardListHref(query, false, 1, filters)} aria-current={!archived ? "page" : undefined} className="rounded-lg px-4 py-3 text-center text-sm font-medium transition-colors hover:text-primary aria-[current=page]:bg-card aria-[current=page]:text-primary aria-[current=page]:shadow-sm focus-visible:outline-2 focus-visible:outline-ring"><T text={"Active cards"}/></Link>
       <Link href={cardListHref(query, true, 1, filters)} aria-current={archived ? "page" : undefined} className="rounded-lg px-4 py-3 text-center text-sm font-medium transition-colors hover:text-primary aria-[current=page]:bg-card aria-[current=page]:text-primary aria-[current=page]:shadow-sm focus-visible:outline-2 focus-visible:outline-ring"><T text={"Archived cards"}/></Link>
     </nav>
+    <p className="text-sm text-muted-foreground"><T text="Dates and times use Cambodia time (UTC+7)."/></p>
     <CardSearch key={`${archived}-${query}-${JSON.stringify(filters)}-${error ?? ""}`} query={query} archived={archived} filters={filters}/>
     {error && <p role="alert" className="rounded-lg border border-destructive p-3"><T text={"Unable to apply search or filters: "}/>{<T text={error}/>}<T text={" Correct the controls above or reset them."}/></p>}
     {cards.length ? <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -43,7 +44,7 @@ export function CachedCards({ params }: {
         <dl className="space-y-2 text-sm">
           {[["Company", card.company], ["Job title", card.job_title], ["Phone", card.phone], ["Email", card.email]].map(([label, value]) => value && <div key={label}><dt className="text-muted-foreground">{<T text={label ?? ""}/>}</dt><dd dir="auto" className="break-words">{value}</dd></div>)}
         </dl>
-        <p className="text-xs text-muted-foreground"><T text={"Created "}/><time dateTime={card.created_at}>{date(card.created_at, { timeZone: "Asia/Phnom_Penh" })}</time></p>        </Link>
+        <p className="text-xs text-muted-foreground"><T text={"Created "}/><time dateTime={card.created_at}>{date(card.created_at)}</time></p>        </Link>
       </li>)}
     </ul> : !error && <div className="space-y-3 rounded-xl border bg-card p-6 text-center sm:p-10">
       <p role="status">{hasFilters ? t("No {status} cards match these filters{search}{page}.", {status: t(archived ? "archived" : "active"), search: query ? t(" and search") : "", page: page > 1 ? t(" on this page") : ""}) : query ? t("No {status} cards {page}match “{query}”.", {status: t(archived ? "archived" : "active"), page: page > 1 ? t("on this page ") : "", query}) : page > 1 ? <T text={"No cards on this page."}/> : archived ? <T text={"You have no archived cards."}/> : <T text={"You have no saved cards yet. Scan a card and review its information to get started."}/>}</p>

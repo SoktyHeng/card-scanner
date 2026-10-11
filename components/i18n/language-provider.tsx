@@ -2,6 +2,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { LANGUAGE_COOKIE, localeFor, type Language, type Parameters } from "@/lib/i18n/locale";
 import { translate } from "@/lib/i18n/messages";
+import { formatCambodiaDate } from "@/lib/utils/cambodia-time";
 const Context = createContext<{language: Language; setLanguage: (language: Language) => void}>({language: "en", setLanguage: () => {}});
 export function LanguageProvider({ initialLanguage = "en", children }: { initialLanguage?: Language; children?: React.ReactNode }) {
   const [language, setLanguage] = useState(initialLanguage);
@@ -16,7 +17,7 @@ export function useLanguage() {
   const context = useContext(Context);
   return { ...context, t: (text: string, parameters?: Parameters) => translate(context.language, text, parameters),
     number: (value: number, options?: Intl.NumberFormatOptions) => new Intl.NumberFormat(localeFor(context.language), options).format(value),
-    date: (value: string | Date, options?: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat(localeFor(context.language), options).format(new Date(value)),
+    date: (value: string | Date, options?: Omit<Intl.DateTimeFormatOptions, "timeZone">) => formatCambodiaDate(value, localeFor(context.language), options),
   };
 }
 export function T({ text, parameters }: { text: string; parameters?: Parameters }) { const {t} = useLanguage(); return <>{t(text, parameters)}</>; }

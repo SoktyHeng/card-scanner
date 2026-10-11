@@ -1,9 +1,9 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
-export async function getDashboard(supabase: SupabaseClient<Database>, userId: string) {
-  const today = new Date();
-  today.setUTCHours(0, 0, 0, 0);
+import { cambodiaTodayBounds } from "@/lib/utils/cambodia-time";
+export async function getDashboard(supabase: SupabaseClient<Database>, userId: string, now: Date = new Date()) {
+  const today = cambodiaTodayBounds(now);
   const [total, scannedToday, archived, recent] = await Promise.all([
     supabase
       .from("cards")
@@ -14,7 +14,8 @@ export async function getDashboard(supabase: SupabaseClient<Database>, userId: s
       .from("cards")
       .select("id", { count: "exact", head: true })
       .eq("user_id", userId)
-      .gte("created_at", today.toISOString()),
+      .gte("created_at", today.from)
+      .lt("created_at", today.until),
     supabase
       .from("cards")
       .select("id", { count: "exact", head: true })

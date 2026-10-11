@@ -161,7 +161,8 @@ pending. Phase 11 has password-flow code and hosted Auth/email checks completed
 against the localhost production app;
 Phases 12 filters/sorting and 13 secure draft recovery are implemented and
 validated. Phase 14 localization is implemented, with human Khmer and real
-screen-reader acceptance pending; Phases 15–16 are **planned**. Phase 13 scheduled cleanup still needs
+screen-reader acceptance pending. Phase 15 Cambodia dates/daily counts is
+implemented and validated; Phase 16 is **planned**. Phase 13 scheduled cleanup still needs
 a trusted scheduler and server-only maintenance credentials. Full production sign-off requires the checks
 in the latest verification above. Older verification snapshots below are historical.
 
@@ -434,8 +435,8 @@ missing translations fall back to English. Dynamic messages use named parameters
 so user data remains literal. Extracted names, custom labels/values, original
 text, AI results, field keys and save payloads are preserved. Noto Sans Khmer is
 bundled locally; no external font request is needed. Dates and numbers use the
-selected locale. Existing time-zone policies, including the dashboard's UTC-day
-count, remain until Phase 15.
+selected locale. Phase 15 below now applies Cambodia time consistently across
+displays, daily counts and filters.
 
 Verification (Node 24): **184 tests passed**, lint, strict TypeScript and the
 production build passed. Tests cover catalog/error completeness, parameter
@@ -455,10 +456,26 @@ screen-reader test. No hosted schema or AI-provider changes are required.
 
 ### Phase 15 — Consistent Cambodia dates
 
-Replace the dashboard's current UTC-day count with Asia/Phnom_Penh day boundaries
-and use the same policy for displayed dates and date filters. Retain UTC storage
-and translate local boundaries to UTC query ranges. Test local midnight and
-month/year transitions independent of browser/server time zones.
+Implemented and validated (2026-10-12). A shared
+[time utility](lib/utils/cambodia-time.ts) uses `Asia/Phnom_Penh` for dashboard
+counts, displayed card dates/times, draft expiry and created-date filters.
+English and Khmer displays retain their selected locale and explain Cambodia
+time (UTC+7). Timestamps remain stored in UTC; no database migration is needed.
+
+**Scanned today (Cambodia)** counts the signed-in user's cards created from local
+midnight, inclusive, to the next local midnight, exclusive. Archived scans still
+count, as before. For example, January 1, 2027 runs from
+`2026-12-31T17:00:00Z` to, but not including, `2027-01-01T17:00:00Z`.
+The same boundaries apply to date filters; their selected end day is included in
+full. Existing browser-memory cache freshness limits still apply.
+
+Verification (Node 24): **188 tests passed**, lint, strict TypeScript and the
+production build passed. Tests cover Cambodia midnight, month/year transitions,
+leap days, inclusive date ranges, exclusive next-midnight boundaries, owner
+isolation and archived scans. Formatting and calendar queries were checked under
+UTC, Los Angeles, Honolulu and Tokyo host time zones. Production HTTP checks
+passed protected-route/API access, English/Khmer cookie rendering and browser
+secret-leak checks. The temporary verification server was stopped.
 
 ### Phase 16 — Tags, notes and favorites
 

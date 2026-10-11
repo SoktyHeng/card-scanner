@@ -19,7 +19,7 @@ export function CachedDashboard() {
     const stats = [
         { label: "Active cards", value: data.total, icon: CreditCard },
         {
-            label: "Scanned today (UTC)",
+            label: "Scanned today (Cambodia)",
             value: data.scannedToday,
             icon: CalendarDays,
         },
@@ -47,7 +47,7 @@ export function CachedDashboard() {
       <Card>
         <CardHeader>
           <CardTitle><T text={"Recent cards"}/></CardTitle>
-          <CardDescription><T text={"Your five most recently saved cards."}/></CardDescription>
+          <CardDescription><T text={"Your five most recently saved cards."}/> <T text="Dates and times use Cambodia time (UTC+7)."/></CardDescription>
         </CardHeader>
         <CardContent>
           {data.recent.length ? (<ul className="divide-y">
@@ -61,9 +61,7 @@ export function CachedDashboard() {
                     </p>
                   </div>
                   <time dateTime={card.created_at} className="text-sm text-muted-foreground">
-                    {date(card.created_at, {
-                    timeZone: "UTC",
-                })}
+                    {date(card.created_at)}
                   </time>
                 </li>))}
             </ul>) : (<div className="flex flex-col items-center py-10 text-center">

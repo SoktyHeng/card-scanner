@@ -55,7 +55,7 @@ export function CardScanner({ owner }: {
           <p className="font-semibold"><T text={"Draft recovery"}/></p>
           <p className="text-sm text-muted-foreground"><T text={"Opt in to keep images and review edits privately for 24 hours from draft creation. Wait for Recovery saved before leaving. A recovered card still needs your review and confirmation."}/></p>
           <p role="status" aria-live="polite" className="text-sm">{<T text={recovery.status}/>}</p>
-          {recovery.meta && <p className="text-xs text-muted-foreground"><T text="Expires {date}" parameters={{date: date(recovery.meta.expiresAt, {dateStyle: "medium", timeStyle: "short"})}}/></p>}
+          {recovery.meta && <p className="text-xs text-muted-foreground"><T text="Expires {date} (Cambodia time)" parameters={{date: date(recovery.meta.expiresAt, {dateStyle: "medium", timeStyle: "short"})}}/></p>}
           <div className="flex flex-wrap gap-2">
             {!recovery.enabled ? <Button type="button" variant="outline" disabled={busy || (!state.image && !backImage)} onClick={recovery.enable}><T text={"Keep a recovery draft"}/></Button> : <>
               <Button type="button" variant="outline" disabled={busy} onClick={() => { void recovery.saveNow(); }}><T text={"Save draft now"}/></Button>

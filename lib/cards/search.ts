@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { cambodiaDayBounds } from "@/lib/utils/cambodia-time";
 
 export const MAX_SEARCH_LENGTH = 200;
 export const cardSearchQuerySchema = z.string().trim().max(MAX_SEARCH_LENGTH, "Use 200 characters or fewer.")
@@ -41,6 +42,6 @@ export function cardListHref(query: string, archived: boolean, page = 1, filters
 }
 // Inclusive Cambodia calendar days, expressed as UTC timestamps for PostgreSQL.
 export function cardDateBounds(filters: CardListFilters) {
-  return { from: filters.from ? new Date(`${filters.from}T00:00:00+07:00`).toISOString() : null,
-    until: filters.to ? new Date(Date.parse(`${filters.to}T00:00:00+07:00`) + 86_400_000).toISOString() : null };
+  return { from: filters.from ? cambodiaDayBounds(filters.from).from : null,
+    until: filters.to ? cambodiaDayBounds(filters.to).until : null };
 }

@@ -27,7 +27,7 @@ test("catalog covers operational errors and field labels, preserves interpolatio
 
 function Formatting() {
   const { date, number } = useLanguage();
-  return createElement("div", null, createElement("time", null, date("2026-10-11T18:00:00Z", {timeZone: "Asia/Phnom_Penh", dateStyle: "long"})), createElement("output", null, number(12345.67)));
+  return createElement("div", null, createElement("time", null, date("2026-10-11T18:00:00Z", {dateStyle: "long"})), createElement("output", null, number(12345.67)));
 }
 test("language switch changes document language, cookie, announcements and date/number presentation without navigation", () => {
   const view = render(createElement(LanguageProvider, null, createElement(LanguageSelector), createElement(T, {text: "Dashboard"}), createElement(Formatting)));

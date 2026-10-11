@@ -403,5 +403,8 @@
   "Your reset link has been verified.": "បានផ្ទៀងផ្ទាត់តំណកំណត់ពាក្យសម្ងាត់របស់អ្នក។",
   "Use your new password the next time you sign in.": "ប្រើពាក្យសម្ងាត់ថ្មីពេលចូលគណនីលើកក្រោយ។",
   "Invalid ISO date": "កាលបរិច្ឆេទមិនត្រឹមត្រូវ។",
-  "MB ·": "MB ·"
+  "MB ·": "MB ·",
+  "Scanned today (Cambodia)": "កាតបានស្កេនថ្ងៃនេះ (ម៉ោងកម្ពុជា)",
+  "Dates and times use Cambodia time (UTC+7).": "កាលបរិច្ឆេទ និងពេលវេលាប្រើម៉ោងកម្ពុជា (UTC+7)។",
+  "Expires {date} (Cambodia time)": "ផុតកំណត់ {date} (ម៉ោងកម្ពុជា)"
 }
