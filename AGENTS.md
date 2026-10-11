@@ -2344,7 +2344,7 @@ and sorting and Phase 13 secure draft recovery are implemented and validated.
 Phase 13 scheduled maintenance activation remains pending. Phase 14 interface
 localization is implemented and automatically validated; Khmer wording review
 and real screen-reader acceptance remain pending. Phase 15 Cambodia dates and
-daily counts are implemented and validated. Phase 16 is planned.
+daily counts are implemented and validated. Phase 16 organization is implemented.
 Work sequentially, preserving the existing scanning/review/save flow.
 Keep the MVP completion criteria separate from these enhancements. Do not
 rebuild front/back scanning or duplicate warnings as new features.
@@ -2553,6 +2553,42 @@ Definition of done:
 
 - Users can organize their own cards by tags and favorites and add notes;
   organization metadata remains private and source extraction is unchanged.
+
+Implementation (2026-10-12): saved-card details provide an explicit Save
+organization form for private notes, favorites and tags. Notes are bounded to
+10,000 characters, tags to 20 per card and labels to 50 characters. Names are
+trimmed/NFC-normalized and deduplicated case-insensitively. Plain React text and
+textarea rendering preserve user content safely. English/Khmer messages cover
+organization controls, feedback and the new exact-tag/favorite list filters.
+Filters preserve existing search/sort/archive/date state and pagination.
+
+Migration `20261012030000_card_organization.sql` uses owner RLS and composite
+card/tag ownership foreign keys; the invoker organization RPC locks the card,
+checks its original updated_at and saves metadata/relations atomically. Its
+revision receipt allows subsequent saves. Follow-up migration
+`20261012040000_organization_conflict_response.sql` raises `PT409` for stale
+organization saves, avoiding hosted PostgREST's retry behavior for custom
+`40001` exceptions. The management handler maps it to controlled HTTP 409.
+Conflicts preserve browser edits;
+background cache refreshes do not overwrite unfinished organization edits.
+Source OCR, original AI extraction and reviewed contact columns are unchanged.
+Archive/restore retain organization; permanent card deletion cascades links.
+Unused tag names remain private and reusable. New-column defaults are included
+in the existing transactional scan-save RPC.
+
+Verification (2026-10-12, Node 24): **194 tests passed**, lint, strict
+TypeScript and the production build passed. Both migrations were applied to
+hosted Supabase. Live tests with two disposable accounts passed ownership and
+relation CRUD denial, duplicate names, source preservation, combined filters,
+simultaneous-save conflicts and archive/restore/delete behavior. Production HTTP
+checks passed route/API authentication, browser-secret checks and English/Khmer
+rendering. Synthetic live fixtures were cleaned and the temporary verification
+server was stopped. Human Khmer wording and real screen-reader acceptance from
+Phase 14 remain pending.
+
+`npm run verify:organization` checks two disposable owners against hosted
+Supabase, including concurrent saves and cross-user relation CRUD, and cleans
+only its synthetic records. Keep secrets in ignored environment files.
 
 These phases do not authorize RAG, chatbots, embeddings, organization hierarchies,
 queues or extra backend services. Those remain outside the incremental roadmap.

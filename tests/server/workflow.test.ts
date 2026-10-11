@@ -25,6 +25,7 @@ test("scan → review → save → detail → edit → archive → restore → d
       assert.equal(new Headers(init?.headers).get("authorization"), "Bearer owner-session");
       const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
       const method = init?.method ?? "GET";
+      if (url.pathname === "/rest/v1/rpc/card_tag_names") return Response.json([]);
       if (url.pathname === "/rest/v1/card_images") return Response.json([]);
       if (url.pathname === "/rest/v1/rpc/save_card_with_images") {
         const payload = JSON.parse(String(init?.body));

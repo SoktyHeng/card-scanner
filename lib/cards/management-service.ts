@@ -13,6 +13,14 @@ const failed = () => new ManagementError(503, "OPERATION_FAILED", "Unable to upd
 
 export async function mutateCard(supabase: SupabaseClient<Database>, userId: string, id: string, input: z.output<typeof cardMutationSchema>) {
   const data = cardMutationSchema.parse(input);
+  if (data.operation === "organize") {
+    const result = await supabase.rpc("organize_card", {p_id: id, p_expected: data.expectedUpdatedAt, p_notes: data.notes, p_favorite: data.favorite, p_tags: data.tags});
+    if (result.error?.code === "PT409" || result.error?.code === "40001") throw new ManagementError(409, "CONFLICT", "This card changed since you opened it. Keep a copy of your edits, then reload before saving.");
+    if (result.error?.code === "P0002") throw missing();
+    if (result.error) throw failed();
+    if (typeof result.data !== "string") throw failed();
+    return result.data;
+  }
   const changes = data.operation === "update" ? correctedColumns(data.reviewedData) : { is_archived: data.operation === "archive" };
   let query = supabase.from("cards").update(changes).eq("user_id", userId).eq("id", id);
   if (data.operation === "update") query = query.eq("updated_at", data.expectedUpdatedAt);

@@ -22,7 +22,7 @@ export function CachedCards({ params }: {
     if (!error && !read.data)
         return <CardListSkeleton />;
     const { cards, hasNext } = read.data ?? { cards: [], hasNext: false };
-    const hasFilters = !!(filters.cardType || filters.company || filters.from || filters.to);
+    const hasFilters = !!(filters.cardType || filters.company || filters.from || filters.to || filters.tag || filters.favorites);
     const href = (value: number) => cardListHref(query, archived, value, filters);
     return <section className="space-y-6">
     <div className="flex flex-wrap items-center justify-between gap-4">

@@ -81,6 +81,8 @@ export function CardSearchForm({ query, archived, filters = DEFAULT_CARD_FILTERS
           {Object.entries(CARD_SORTS).map(([value, label]) => <option key={value} value={value}>{<T text={label}/>}</option>)}
         </select>
       </div>
+      <div className="space-y-2"><Label htmlFor={`${id}-tag`}>{t("Tag (exact name)")}</Label><Input id={`${id}-tag`} name="tag" maxLength={50} dir="auto" value={draftFilters.tag ?? ""} disabled={pending} onChange={event => {setDraftFilters({...draftFilters, tag: event.target.value}); setError(null);}}/></div>
+      <div className="space-y-2"><Label htmlFor={`${id}-favorites`}>{t("Favorites")}</Label><select id={`${id}-favorites`} name="favorites" value={draftFilters.favorites ?? ""} disabled={pending} onChange={event => setDraftFilters({...draftFilters, favorites: event.target.value as "" | "1"})} className="min-h-11 w-full rounded-md border bg-background px-3 text-base focus-visible:outline-2 focus-visible:outline-ring"><option value="">{t("All cards")}</option><option value="1">{t("Favorites only")}</option></select></div>
     </div>
     <p id={`${id}-filters-help`} className="text-sm text-muted-foreground"><T text={"Type and company match exact saved values, including case. Dates include both selected days in Cambodia time (UTC+7). Cards without names appear last when sorting by name. Press Search to apply."}/></p>
     <Link href={cardListHref("", archived)} className="inline-block rounded py-3 text-sm underline focus-visible:outline-2"><T text={"Reset search, filters and sorting"}/></Link>

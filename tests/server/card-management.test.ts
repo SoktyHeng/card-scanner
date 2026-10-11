@@ -16,7 +16,7 @@ const row: CardRow = {
   address: null, card_type: null, raw_ocr_text: "source", ai_extraction: { name: "AI name" },
   extra_fields: [{ label: "Tier", key: "tier", value: "Gold", confidence: null }],
   ai_confidence: 0.8, scan_status: "completed", original_image_path: path,
-  is_archived: false, created_at: "2026-10-07T00:00:00Z", updated_at: "2026-10-07T00:00:00Z",
+  notes: "", is_favorite: false, is_archived: false, created_at: "2026-10-07T00:00:00Z", updated_at: "2026-10-07T00:00:00Z",
 };
 
 test("two-sided deletion retains the archived card after back cleanup failure and safely retries both paths", async () => {
@@ -222,4 +222,25 @@ test("management accepts public LAN Host and rejects malformed content types, ti
   assert.equal((await handler(request({ operation: "update", expectedUpdatedAt: "not a timestamp", reviewedData: savedCardDraft(row) }), route)).status, 400);
   assert.equal((await handler(request("x".repeat(1024 * 1024)), route)).status, 413);
   assert.equal(calls, 1);
+});
+
+test("organization handler authenticates RPC metadata, returns exact revision and controls conflict/missing errors", async () => {
+  const revision = "2026-10-12T02:03:04.123456Z";
+  const body = {operation:"organize",expectedUpdatedAt:row.updated_at,notes:"private ខ្មែរ",favorite:true,tags:["VIP"]};
+  let code: string | null = null;
+  const supabase = client(async (input, init) => {
+    assert.equal(urlOf(input).pathname,"/rest/v1/rpc/organize_card");
+    assert.deepEqual(JSON.parse(String(init?.body)), {p_id:id,p_expected:row.updated_at,p_notes:body.notes,p_favorite:true,p_tags:["VIP"]});
+    return code ? Response.json({code,message:"sensitive database details"},{status:400}) : Response.json(revision);
+  });
+  const handler = createManagementHandler(async () => ({supabase,userId:owner}));
+  const request = () => new Request(`http://localhost/api/cards/${id}`,{method:"PATCH",headers:{origin:"http://localhost","content-type":"application/json"},body:JSON.stringify(body)});
+  const route = {params:Promise.resolve({id})};
+  assert.deepEqual(await (await handler(request(),route)).json(),{success:true,updatedAt:revision});
+  for (const [error,status] of [["PT409",409],["40001",409],["P0002",404],["unexpected",503]] as const) {
+    code=error;
+    const response = await handler(request(),route);
+    assert.equal(response.status,status);
+    assert.ok(!(await response.text()).includes("sensitive database"));
+  }
 });

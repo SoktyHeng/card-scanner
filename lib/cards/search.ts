@@ -1,3 +1,4 @@
+import { tagNameSchema } from "./organization-schema";
 import { z } from "zod";
 import { cambodiaDayBounds } from "@/lib/utils/cambodia-time";
 
@@ -12,15 +13,17 @@ export const cardListFiltersSchema = z.object({
   company: cardSearchQuerySchema.default(""),
   from: dateSchema.default(""),
   to: dateSchema.default(""),
+  tag: z.union([z.literal(""), tagNameSchema]).optional(),
+  favorites: z.enum(["", "1"]).optional(),
   sort: z.enum(["newest", "oldest", "name_asc", "name_desc"]).default("newest"),
 }).refine(value => !value.from || !value.to || value.from <= value.to, { message: "Start date must be on or before end date.", path: ["to"] });
 export type CardListFilters = z.infer<typeof cardListFiltersSchema>;
 export const DEFAULT_CARD_FILTERS: CardListFilters = { cardType: "", company: "", from: "", to: "", sort: "newest" };
-export type CardListParams = { q?: string | string[]; status?: string | string[]; page?: string | string[]; cardType?: string | string[]; company?: string | string[]; from?: string | string[]; to?: string | string[]; sort?: string | string[] };
+export type CardListParams = { q?: string | string[]; status?: string | string[]; page?: string | string[]; cardType?: string | string[]; company?: string | string[]; from?: string | string[]; to?: string | string[]; sort?: string | string[]; tag?: string | string[]; favorites?: string | string[] };
 export function parseCardListParams(params: CardListParams) {
   const parsedQuery = cardSearchQuerySchema.safeParse(params.q ?? "");
   const parsedPage = pageSchema.safeParse(params.page ?? "1");
-  const filters = cardListFiltersSchema.safeParse({ cardType: params.cardType, company: params.company, from: params.from, to: params.to, sort: params.sort });
+  const filters = cardListFiltersSchema.safeParse({ cardType: params.cardType, company: params.company, from: params.from, to: params.to, sort: params.sort, ...(params.tag === undefined ? {} : {tag: params.tag}), ...(params.favorites === undefined ? {} : {favorites: params.favorites}) });
   const status = z.enum(["active", "archived"]).safeParse(params.status ?? "active");
   return {
     query: parsedQuery.success ? parsedQuery.data : "",
@@ -34,7 +37,7 @@ export function cardListHref(query: string, archived: boolean, page = 1, filters
   const params = new URLSearchParams();
   if (query) params.set("q", query);
   if (archived) params.set("status", "archived");
-  for (const key of ["cardType", "company", "from", "to"] as const) if (filters[key]) params.set(key, filters[key]);
+  for (const key of ["cardType", "company", "from", "to", "tag", "favorites"] as const) if (filters[key]) params.set(key, filters[key]);
   if (filters.sort !== "newest") params.set("sort", filters.sort);
   if (page > 1) params.set("page", String(page));
   const encoded = params.toString();

@@ -1,3 +1,4 @@
+import { organizationSchema } from "./organization-schema";
 import { z } from "zod";
 import type { CardRow } from "@/types/database";
 import { reviewedCardSchema, reviewFieldOrder, type ReviewedCard, type StandardField } from "./review";
@@ -8,6 +9,7 @@ export const cardColumns: Record<StandardField, keyof Pick<CardRow, "name" | "co
   address: "address", cardNumber: "card_number", cardType: "card_type",
 };
 export const cardMutationSchema = z.discriminatedUnion("operation", [
+  organizationSchema,
   z.strictObject({ operation: z.literal("update"), expectedUpdatedAt: z.iso.datetime({ offset: true }), reviewedData: reviewedCardSchema }),
   z.strictObject({ operation: z.enum(["archive", "restore"]) }),
 ]);

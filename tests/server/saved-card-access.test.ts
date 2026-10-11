@@ -15,12 +15,12 @@ const row: CardRow = {
   address: null, card_type: null, raw_ocr_text: "original source", ai_extraction: null,
   extra_fields: [{ label: "Tier", key: "tier", value: "Gold", confidence: null }],
   ai_confidence: null, scan_status: "completed", original_image_path: path,
-  is_archived: false, created_at: "2026-10-07T00:00:00Z", updated_at: "2026-10-07T00:00:00Z",
+  notes: "", is_favorite: false, is_archived: false, created_at: "2026-10-07T00:00:00Z", updated_at: "2026-10-07T00:00:00Z",
 };
 function client(request: typeof fetch) {
   return createClient<Database>("https://example.supabase.co", "public-test-key", {
     auth: { persistSession: false, autoRefreshToken: false },
-    global: { headers: { Authorization: "Bearer owner-session" }, fetch: request },
+    global: { headers: { Authorization: "Bearer owner-session" }, fetch: async (input, init) => urlOf(input).pathname === "/rest/v1/rpc/card_tag_names" ? Response.json([]) : request(input, init) },
   });
 }
 function urlOf(input: Parameters<typeof fetch>[0]) {

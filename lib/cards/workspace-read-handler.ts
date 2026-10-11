@@ -16,7 +16,7 @@ export function createWorkspaceReadHandler(authenticate: () => Promise<ReadConte
       if (!context) return reply({ error: "Session expired." }, 401);
       const params = new URL(request.url).searchParams;
       const type = params.get("type");
-      const allowed = type === "cards" ? ["type", "q", "status", "page", "cardType", "company", "from", "to", "sort"] : type === "detail" ? ["type", "id"] : ["type"];
+      const allowed = type === "cards" ? ["type", "q", "status", "page", "cardType", "company", "from", "to", "sort", "tag", "favorites"] : type === "detail" ? ["type", "id"] : ["type"];
       if ([...params.keys()].some(key => !allowed.includes(key) || params.getAll(key).length !== 1)) return reply({ error: "Invalid request." }, 400);
       const { userId, supabase } = context;
       const imagesExpireAt = Date.now() + SIGNED_IMAGE_SECONDS * 1000;

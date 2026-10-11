@@ -1,6 +1,7 @@
 "use client";
 import { T, useLanguage } from "@/components/i18n/language-provider";
 
+import { CardOrganization } from "@/components/cards/card-organization";
 import Link from "next/link";
 import { useWorkspaceData } from "@/components/cache/workspace-cache";
 import { CardDetailSkeleton } from "@/components/cards/card-skeletons";
@@ -32,6 +33,7 @@ export function CachedCardDetail({ id }: {
     <FlippableCardImage key={`${imageUrl}-${backImageUrl}`} frontUrl={imageUrl} backUrl={backImageUrl}/>
     {imageUnavailable && <p role="alert" className="rounded-lg border p-3"><T text={"Unable to load the private image. Reload this page to try again."}/></p>}
     {!card.original_image_path && <p className="text-sm text-muted-foreground"><T text={"No original image is available."}/></p>}
+    <CardOrganization key={card.id} id={card.id} updatedAt={card.updated_at} notes={card.notes} favorite={card.is_favorite} tags={result.tags.map(tag => tag.name)}/>
     <SavedCardFields fields={reviewFieldOrder.map(key => ({ key, value: card[cardColumns[key]] }))} extraFields={extraFields} extraFieldsUnavailable={extraFieldsUnavailable}/>
     <p className="text-sm text-muted-foreground"><T text={"Saved "}/><time dateTime={card.created_at}>{date(card.created_at, { dateStyle: "medium", timeStyle: "short" })}</time></p>
     <p className="text-sm text-muted-foreground"><T text={"Last updated "}/><time dateTime={card.updated_at}>{date(card.updated_at, { dateStyle: "medium", timeStyle: "short" })}</time></p>

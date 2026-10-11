@@ -65,3 +65,20 @@ test("combined exact filters and inclusive Cambodia dates use allowlisted stable
     await getCardList(client, owner, false, 2, query, { ...DEFAULT_CARD_FILTERS, company: "O'Brien, %_* (VIP)", cardType: "custom_card", from: "2026-10-10", to: "2026-10-10", sort });
   }
 });
+
+test("tag and favorite queries remain parameterized, owner-scoped and paginated with existing filters", async () => {
+  const {DEFAULT_CARD_FILTERS} = await import("../../lib/cards/search");
+  const client = createClient<Database>("https://example.supabase.co","test-key",{auth:{persistSession:false},global:{fetch:async (input,init)=>{
+    const url = new URL(String(input));
+    assert.equal(url.pathname,"/rest/v1/rpc/filter_cards");
+    assert.deepEqual(JSON.parse(String(init?.body)),{p_query:"ខ្មែរ &+",p_tag:"O'Brien VIP",p_favorites:true});
+    assert.equal(url.searchParams.get("user_id"),`eq.${owner}`);
+    assert.equal(url.searchParams.get("is_archived"),"eq.true");
+    assert.equal(url.searchParams.get("company"),"eq.Example");
+    assert.equal(url.searchParams.get("offset"),"24");
+    assert.equal(url.searchParams.get("limit"),"25");
+    assert.equal(url.searchParams.get("order"),"created_at.asc,id.asc");
+    return Response.json([]);
+  }}});
+  assert.deepEqual(await getCardList(client,owner,true,2,"ខ្មែរ &+",{...DEFAULT_CARD_FILTERS,tag:"O'Brien VIP",favorites:"1",sort:"oldest",company:"Example"}),{cards:[],hasNext:false});
+});

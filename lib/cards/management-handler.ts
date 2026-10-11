@@ -36,15 +36,16 @@ export function createManagementHandler(authenticate: () => Promise<Context | nu
       let body: unknown;
       try { body = JSON.parse(Buffer.concat(chunks).toString("utf8")); }
       catch { throw new ManagementError(400, "INVALID_REQUEST", "Unable to read the submitted card data."); }
+      let updatedAt: string | undefined;
       if (deleting) {
         if (!cardDeleteSchema.safeParse(body).success) throw new ManagementError(400, "INVALID_REQUEST", "Confirm permanent deletion first.");
         await permanentlyDeleteCard(context.supabase, context.userId, id);
       } else {
         const validated = cardMutationSchema.safeParse(body);
         if (!validated.success) throw new ManagementError(400, "INVALID_REQUEST", "Check the corrected card fields before saving.");
-        await mutateCard(context.supabase, context.userId, id, validated.data);
+        updatedAt = await mutateCard(context.supabase, context.userId, id, validated.data);
       }
-      return reply({ success: true });
+      return reply({ success: true, ...(updatedAt ? {updatedAt} : {}) });
     } catch (error) {
       if (error instanceof ManagementError) return reply({ success: false, error: { code: error.code, message: error.message } }, error.status);
       console.error("Card management operation failed");

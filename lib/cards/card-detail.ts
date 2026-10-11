@@ -1,4 +1,5 @@
 import "server-only";
+import { cardTagsSchema } from "./organization-schema";
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
@@ -13,6 +14,9 @@ export async function getSavedCard(supabase: SupabaseClient<Database>, userId: s
   const { data, error } = await supabase.from("cards").select("*").eq("user_id", userId).eq("id", id).maybeSingle();
   if (error) throw new Error("Unable to load this card. Please try again.");
   if (!data) return null;
+  const tagResult = await supabase.rpc("card_tag_names", {p_id: id});
+  if (tagResult.error) throw new Error("Unable to load card organization.");
+  const tags = cardTagsSchema.parse(tagResult.data);
   const extras = reviewedCardSchema.shape.extraFields.safeParse(data.extra_fields);
   let imageUrl: string | null = null;
   let imageUnavailable = false;
@@ -27,7 +31,7 @@ export async function getSavedCard(supabase: SupabaseClient<Database>, userId: s
       else backImageUrl = url;
     }
   } catch { imageUnavailable = true; }
-  return { card: data, extraFields: extras.success ? extras.data : [], extraFieldsUnavailable: !extras.success, imageUrl, backImageUrl, imageUnavailable };
+  return { card: data, tags, extraFields: extras.success ? extras.data : [], extraFieldsUnavailable: !extras.success, imageUrl, backImageUrl, imageUnavailable };
 }
 
 export const CARDS_PER_PAGE = 24;
@@ -37,7 +41,7 @@ export async function getCardList(supabase: SupabaseClient<Database>, userId: st
   const dates = cardDateBounds(filters);
   if (!Number.isSafeInteger(page) || page < 1 || page > 100000) throw new Error("Invalid card list page.");
   // Empty search uses the existing list query and does not require the RPC.
-  const source = keyword ? supabase.rpc("search_cards", { p_query: keyword }) : supabase.from("cards");
+  const source = filters.tag || filters.favorites === "1" ? supabase.rpc("filter_cards", {p_query: keyword, p_tag: filters.tag ?? "", p_favorites: filters.favorites === "1"}) : keyword ? supabase.rpc("search_cards", { p_query: keyword }) : supabase.from("cards");
   let request = source
     .select("id,name,company,job_title,phone,email,created_at,original_image_path")
     .eq("user_id", userId).eq("is_archived", archived);

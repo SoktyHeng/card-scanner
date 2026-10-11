@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { invalidateWorkspaceCache } from "@/lib/cache/events";
 const responseSchema = z.discriminatedUnion("success", [
-  z.strictObject({ success: z.literal(true) }),
+  z.strictObject({ success: z.literal(true), updatedAt: z.iso.datetime({offset: true}).optional() }),
   z.strictObject({ success: z.literal(false), error: z.strictObject({ code: z.string(), message: z.string().max(1000) }) }),
 ]);
 const unavailable = "Unable to complete this operation. Reload to check its status before retrying.";
@@ -17,7 +17,7 @@ const messages: Record<string, string> = {
 };
 export async function cardOperation(id: string, method: "PATCH" | "DELETE", body: unknown) {
   // Even a failed/uncertain response can follow a partially completed mutation.
-  try { await performCardOperation(id, method, body); }
+  try { return await performCardOperation(id, method, body); }
   finally { invalidateWorkspaceCache(method === "DELETE"); }
 }
 async function performCardOperation(id: string, method: "PATCH" | "DELETE", body: unknown) {
@@ -34,4 +34,5 @@ async function performCardOperation(id: string, method: "PATCH" | "DELETE", body
   if (!result.success) throw new Error(unavailable);
   if (!result.data.success) throw new Error(messages[result.data.error.code] ?? unavailable);
   if (!response.ok) throw new Error(unavailable);
+  return result.data;
 }

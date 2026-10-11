@@ -162,7 +162,7 @@ against the localhost production app;
 Phases 12 filters/sorting and 13 secure draft recovery are implemented and
 validated. Phase 14 localization is implemented, with human Khmer and real
 screen-reader acceptance pending. Phase 15 Cambodia dates/daily counts is
-implemented and validated; Phase 16 is **planned**. Phase 13 scheduled cleanup still needs
+implemented and validated; Phase 16 organization is implemented. Phase 13 scheduled cleanup still needs
 a trusted scheduler and server-only maintenance credentials. Full production sign-off requires the checks
 in the latest verification above. Older verification snapshots below are historical.
 
@@ -479,11 +479,45 @@ secret-leak checks. The temporary verification server was stopped.
 
 ### Phase 16 — Tags, notes and favorites
 
-Use owner-protected tag and card/tag tables, user-authored notes and a favorite
-flag. Add editing and tag/favorite filters while preserving search/sort state.
-Keep notes separate from OCR/AI source, define archive/delete behavior and include
-organization metadata through archive, restore and delete. Test relation ownership, concurrent updates
-and cross-user denial. This phase follows the core usability improvements.
+Implemented (2026-10-12). Open a saved card, edit **Personal notes**, select
+**Favorite**, and add or remove **Tags**, then choose **Save organization**.
+Notes allow 10,000 characters; each card allows 20 tags of up to 50 characters.
+Tag names are trimmed, Unicode-normalized and case-insensitive. Notes and tag
+labels render as text, including Khmer and multiline notes; they do not alter
+OCR text, AI extraction or reviewed contact information.
+
+The Cards filters now include **Tag (exact name)** and **Favorites only**.
+They combine with keyword, company, card type, date, archive and sort filters,
+including pagination. Successful saves invalidate the existing browser cache.
+Organization saves are atomic and compare the card's original update timestamp:
+a stale edit returns a conflict and keeps the form's edits for copying/reloading.
+Archive and restore preserve organization. Permanent deletion cascades card/tag
+links; unused tags remain private and reusable.
+
+Migration `supabase/migrations/20261012030000_card_organization.sql` adds notes,
+favorites, owner-scoped tags and relations, with RLS and composite foreign keys
+protecting both relation owners. It also preserves the existing scan-save RPC's
+new-column defaults. The follow-up
+`20261012040000_organization_conflict_response.sql` returns stale saves as
+`PT409` business conflicts. This avoids the hosted retry loop caused by using
+`40001` for an application conflict, as described in
+[Supabase's RPC troubleshooting guide](https://supabase.com/docs/guides/troubleshooting/high-cpu-and-infinite-transaction-retries-when-using-custom-error-codes-in-rpc-functions-77326b).
+Apply both version-controlled migrations before using this UI.
+
+Verification (2026-10-12, Node 24): **194 tests passed**, lint, strict
+TypeScript and the production build passed. Both migrations were applied to
+hosted Supabase. Live tests with two disposable accounts passed ownership and
+relation CRUD denial, duplicate names, source preservation, combined filters,
+simultaneous-save conflicts and archive/restore/delete behavior. Production HTTP
+checks passed route/API authentication, browser-secret checks and English/Khmer
+rendering. Synthetic live fixtures were cleaned and the temporary verification
+server was stopped. Human Khmer wording and real screen-reader acceptance from
+Phase 14 remain pending.
+
+Run `npm run verify:organization` with two distinct disposable test accounts to
+check hosted ownership, duplicate names, source preservation, simultaneous edits,
+combined filters and archive/delete behavior. The verifier uses normal user
+sessions and removes only its synthetic cards and tags.
 
 RAG, chatbots, embeddings and additional backend infrastructure remain outside
 this roadmap. These plans extend the MVP without changing its completion criteria.
